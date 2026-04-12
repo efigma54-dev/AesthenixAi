@@ -1,0 +1,53 @@
+{
+  "name": "ai-code-reviewer",
+  "version": "1.0.0",
+  "description": "**Intelligent Code Analysis Platform** — AI-powered system for analyzing and improving Java code.",
+  "main": "electron/main.js",
+  "homepage": "./",
+  "scripts": {
+    "electron": "electron .",
+    "electron-dev": "NODE_ENV=development electron .",
+    "build": "npm run build --prefix frontend-react",
+    "dist": "npm run build && electron-builder",
+    "dist-win": "npm run build && electron-builder --win",
+    "dist-mac": "npm run build && electron-builder --mac",
+    "dist-linux": "npm run build && electron-builder --linux",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": ["ai", "code-review", "java", "developer-tools", "electron"],
+  "author": "AI Code Reviewer Team",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "electron": "^41.2.0",
+    "electron-builder": "^26.0.12",
+    "wait-on": "^9.0.5"
+  },
+  "build": {
+    "appId": "com.aicode.reviewer",
+    "productName": "AI Code Reviewer",
+    "directories": {
+      "output": "dist-electron"
+    },
+    "files": [
+      "electron/**/*",
+      "frontend-react/dist/**/*",
+      "ai-code-reviewer/**/*",
+      "!ai-code-reviewer/target/test-classes/**/*",
+      "!ai-code-reviewer/src/test/**/*",
+      "node_modules/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": "dmg"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico"
+    },
+    "linux": {
+      "target": "AppImage",
+      "category": "Development"
+    }
+  }
+}

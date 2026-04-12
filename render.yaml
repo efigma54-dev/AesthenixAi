@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: aesthenixai-backend
+    runtime: java
+    buildCommand: ./mvnw clean package -DskipTests -q
+    startCommand: java -jar target/ai-code-reviewer-0.0.1-SNAPSHOT.jar
+    healthCheckPath: /api/ping
+    envVars:
+      - key: SPRING_PROFILES_ACTIVE
+        value: prod
+      - key: OPENAI_API_KEY
+        sync: false # set manually in Render dashboard
+      - key: GITHUB_APP_ID
+        sync: false
+      - key: GITHUB_PRIVATE_KEY
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false # set to your Vercel URL after deploy
+      - key: PORT
+        value: '8080'

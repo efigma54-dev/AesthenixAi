@@ -1,0 +1,93 @@
+{
+  "name": "aesthenixai",
+  "displayName": "AESTHENIXAI — Code Analysis",
+  "description": "AI-powered Java code analysis: quality score, issue detection, and refactoring suggestions powered by GPT-4o + static analysis.",
+  "version": "0.2.0",
+  "publisher": "aesthenixai",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-username/ai-code-reviewer"
+  },
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Linters", "Other"],
+  "keywords": ["java", "ai", "code review", "static analysis", "refactoring"],
+  "icon": "media/icon.png",
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "aesthenix.analyze",
+        "title": "AESTHENIXAI: Analyze Current File"
+      },
+      {
+        "command": "aesthenix.analyzeSelection",
+        "title": "AESTHENIXAI: Analyze Selection"
+      },
+      {
+        "command": "aesthenix.clearDiagnostics",
+        "title": "AESTHENIXAI: Clear Diagnostics"
+      },
+      {
+        "command": "aesthenix.applyRefactor",
+        "title": "AESTHENIXAI: Apply AI Refactor"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "aesthenix.analyze",
+          "when": "editorLangId == java",
+          "group": "aesthenix@1"
+        },
+        {
+          "command": "aesthenix.analyzeSelection",
+          "when": "editorLangId == java && editorHasSelection",
+          "group": "aesthenix@2"
+        },
+        {
+          "command": "aesthenix.applyRefactor",
+          "when": "editorLangId == java",
+          "group": "aesthenix@3"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "AESTHENIXAI",
+      "properties": {
+        "aesthenixai.backendUrl": {
+          "type": "string",
+          "default": "http://localhost:8080/api",
+          "description": "URL of the AESTHENIXAI backend API."
+        },
+        "aesthenixai.timeoutMs": {
+          "type": "number",
+          "default": 30000,
+          "description": "Request timeout in milliseconds."
+        },
+        "aesthenixai.highlightIssues": {
+          "type": "boolean",
+          "default": true,
+          "description": "Highlight issue lines in the editor."
+        },
+        "aesthenixai.autoAnalyzeOnSave": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically analyze Java files when saved."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "npx @vscode/vsce package --allow-missing-repository",
+    "lint": "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.3.0"
+  }
+}

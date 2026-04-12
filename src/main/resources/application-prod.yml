@@ -1,0 +1,58 @@
+# Production profile — loaded when SPRING_PROFILES_ACTIVE=prod
+# All secrets come from Render environment variables.
+
+server:
+  port: ${PORT:8080}
+
+openai:
+  api-key: ${OPENAI_API_KEY}
+  model: ${OPENAI_MODEL:gpt-4o}
+  base-url: https://api.openai.com/v1
+  timeout: 25
+
+# Ollama not available on Render — always use OpenAI in prod
+ai:
+  provider: openai
+
+github:
+  token: ${GITHUB_TOKEN:}
+  app-id: ${GITHUB_APP_ID:}
+  private-key: ${GITHUB_PRIVATE_KEY:}
+  private-key-path: ${GITHUB_PRIVATE_KEY_PATH:}
+  max-files: 15
+
+rate-limit:
+  requests-per-minute: ${RATE_LIMIT_RPM:20}
+
+cors:
+  # Set to your Vercel URL: https://your-app.vercel.app
+  allowed-origins: ${CORS_ORIGINS:*}
+
+spring:
+  application:
+    name: aesthenixai
+  cache:
+    type: caffeine
+    caffeine:
+      spec: maximumSize=200,expireAfterWrite=30m
+  jackson:
+    default-property-inclusion: non_null
+  servlet:
+    multipart:
+      max-request-size: 2MB
+      max-file-size: 2MB
+  task:
+    execution:
+      pool:
+        core-size: 2
+        max-size: 4
+        queue-capacity: 20
+      thread-name-prefix: review-
+
+logging:
+  level:
+    com.aicode: INFO
+    org.springframework.web: WARN
+    reactor.netty: WARN
+  pattern:
+    console: '%d{HH:mm:ss} [%X{requestId}] %-5level %logger{20} - %msg%n'

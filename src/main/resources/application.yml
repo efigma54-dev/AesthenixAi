@@ -1,0 +1,167 @@
+server:
+  port: 8080
+
+ollama:
+  url: ${OLLAMA_URL:http://localhost:11434}
+  model: '${OLLAMA_MODEL:qwen3.5:9b}'
+  timeout: ${OLLAMA_TIMEOUT:120}
+  retry-attempts: ${OLLAMA_RETRIES:3}
+  enabled: ${OLLAMA_ENABLED:true}
+
+github:
+  token: ${GITHUB_TOKEN:}
+  app-id: ${GITHUB_APP_ID:3349093}
+  private-key: ${GITHUB_PRIVATE_KEY:}
+  private-key-path: ${GITHUB_PRIVATE_KEY_PATH:classpath:github-app-private-key.pem}
+  max-files: 15
+
+rate-limit:
+  requests-per-minute: 10
+
+# ────────────────────────────────────────────────────────────────
+# CONFIGURABLE SCORING SYSTEM
+# ────────────────────────────────────────────────────────────────
+# This allows fine-tuning rules without code changes.
+# Interview impact: "I built a tunable configuration system
+# so stakeholders could adjust scoring weights without deploys."
+# ────────────────────────────────────────────────────────────────
+scoring:
+  # Weights for combining rule-based and AI analysis
+  rule-weight: 0.7 # 70% weight on rule engine
+  ai-weight: 0.3 # 30% weight on AI engine
+  graph-weight: 0.1 # 10% weight on graph analysis (bonus)
+
+  # Baseline and bounds
+  base-score: 100 # start at 100, deduct penalties
+  max-penalties: 50 # cap total deductions at 50
+  min-score: 0
+  max-score: 100
+
+  # RULE-SPECIFIC PENALTIES (deducted from base score)
+  long-method-penalty: 15 # methods > 30 lines
+  nested-loop-penalty: 10 # loops nested > 2 levels
+  god-class-penalty: 20 # classes > 15 methods or > 10 fields
+  naming-convention-penalty: 5 # non-camelCase identifiers
+  circular-dependency-penalty: 25 # cyclic imports detected
+  exception-handling-penalty: 20 # bare catch or missing throws
+  complexity-penalty: 10 # high cyclomatic complexity
+  loop-ratio-penalty: 8 # too many loops relative to methods
+
+  # AI-SPECIFIC PENALTIES
+  ai-issue-penalty: 3.0 # per AI-detected issue
+  ai-performance-issue: 5.0 # performance anti-patterns
+  ai-security-issue: 15.0 # potential security vulnerabilities
+
+  # GRAPH ANALYSIS PENALTIES
+  high-coupling-penalty: 12 # module coupling > threshold
+  architectural-violation-penalty: 20 # layer violations
+
+  # THRESHOLD RULES
+  long-method-threshold: 30 # lines
+  god-class-method-threshold: 15 # methods
+  god-class-field-threshold: 10 # fields
+  cyclomatic-complexity-threshold: 10
+  coupling-threshold: 8 # edges per node
+
+  # FILTERING & AGGREGATION
+  min-severity-to-report: 2 # 1-10 scale; report only >= 2
+  deduplicate-similar-issues: true
+  group-by-severity: true # Frontend grouping
+
+  # CACHING
+  cache-results: true
+  cache-ttl-minutes: 30
+
+# ────────────────────────────────────────────────────────────────
+# ANALYSIS PIPELINE CONFIGURATION
+# ────────────────────────────────────────────────────────────────
+analysis:
+  # Security limits
+  max-file-size: ${ANALYSIS_MAX_FILE_SIZE:1048576} # 1MB
+  max-files-per-scan: 100
+
+  # Preprocessing
+  parser-cache-enabled: true
+
+  # Timeout & resilience
+  pipeline-timeout-seconds: 300
+  per-file-timeout-seconds: 30
+
+  # Features
+  dependency-graph-enabled: true
+  diff-analysis-enabled: true
+  metrics-tracking-enabled: true
+
+  # Multi-language support (future)
+  enabled-languages:
+    - java
+    # - python
+    # - javascript
+
+# ────────────────────────────────────────────────────────────────
+# PR REVIEW BOT CONFIGURATION
+# ────────────────────────────────────────────────────────────────
+pr-bot:
+  enabled: ${PR_BOT_ENABLED:false}
+  webhook-secret: ${PR_BOT_WEBHOOK_SECRET:}
+
+  # Comment behavior
+  comment-on-pr: true
+  comment-by-line: true # individual line comments vs single summary
+  min-severity-to-comment: 5 # ignore low-severity in PR comments
+
+  # Output format
+  include-improved-code: true
+  include-suggestion: true
+  char-limit-per-comment: 500
+
+spring:
+  application:
+    name: ai-code-reviewer
+  cache:
+    type: caffeine
+    caffeine:
+      spec: maximumSize=200,expireAfterWrite=30m
+  jackson:
+    default-property-inclusion: non_null
+  servlet:
+    multipart:
+      max-request-size: 2MB
+      max-file-size: 2MB
+  task:
+    execution:
+      pool:
+        core-size: 4
+        max-size: 8
+        queue-capacity: 50
+      thread-name-prefix: review-
+
+# CORS — restrict to known origins in production via env var
+cors:
+  allowed-origins: ${CORS_ORIGINS:*}
+
+logging:
+  level:
+    com.aicode: INFO
+    org.springframework.web: WARN
+    reactor.netty: WARN
+    com.aicode.analysis: DEBUG # detailed analysis logs
+    com.aicode.service: DEBUG # service lifecycle logs
+  pattern:
+    console: '%d{HH:mm:ss} [%X{requestId}] %-5level %logger{20} - %msg%n'
+
+# ────────────────────────────────────────────────────────────────
+# METRICS & OBSERVABILITY
+# ────────────────────────────────────────────────────────────────
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics,prometheus
+  metrics:
+    export:
+      simple:
+        enabled: true
+  endpoint:
+    health:
+      show-details: when-authorized
