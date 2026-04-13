@@ -139,11 +139,12 @@ public class PRReviewBotService {
                 continue;
 
             // Simple analysis - count lines changed as a basic score
-            long changedLines = file.patch.lines().filter(line -> line.startsWith("+") && !line.startsWith("+++")).count();
+            long changedLines = file.patch.lines().filter(line -> line.startsWith("+") && !line.startsWith("+++"))
+                    .count();
             if (changedLines < 3)
                 continue;
 
-            int score = Math.max(60, 100 - (int)(changedLines / 10)); // Simple scoring
+            int score = Math.max(60, 100 - (int) (changedLines / 10)); // Simple scoring
             totalScore += score;
             fileCount++;
 
