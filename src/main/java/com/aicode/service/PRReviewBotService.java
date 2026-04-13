@@ -471,6 +471,7 @@ public class PRReviewBotService {
         } catch (Exception e) {
             log.warn("Failed to complete check run: {}", e.getMessage());
         }
+    }
     // ── GitHub REST helpers ────────────────────────────────────
 
     private void postInlineComment(String repo, int prNumber, String commitId,
