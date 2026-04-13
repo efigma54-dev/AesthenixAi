@@ -540,14 +540,14 @@ public class PRReviewBotService {
     }
 
     private record ReviewOutcome(int avgScore, boolean pass,
-            int inlineCount, int suggCount,
+            int inlineCount, int suggCount, String summaryBody) {
+    }
+
     private record FileAnalysis(String filename, int score, List<Issue> issues,
             List<String> suggestions, String improvedCode) {
-        }
+    }
 
-        private record CodeAnnotation(String path, int startLine, int endLine,
-                String level, String message) {
-        }
-
-        String summaryBody){}
+    private record CodeAnnotation(String path, int startLine, int endLine,
+            String level, String message) {
+    }
 }
