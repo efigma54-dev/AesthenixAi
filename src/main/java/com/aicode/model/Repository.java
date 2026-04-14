@@ -6,7 +6,8 @@ public class Repository {
     private String name;
     private String owner;
 
-    public Repository() {}
+    public Repository() {
+    }
 
     public Repository(String id, String name, String owner) {
         this.id = id;
@@ -14,16 +15,11 @@ public class Repository {
         this.owner = owner;
     }
 
-    public String getId() { return id; }
-    public String getName() { return name; }
-    public String getOwner() { return owner; }
+    public String getId() {
+        return id;
+    }
 
-    public void setId(String id) { this.id = id; }
-    public void setName(String name) { this.name = name; }
-    public void setOwner(String owner) { this.owner = owner; }
-}
-
-    public void setId(Long id) {
+    public void setId(String id) {
         this.id = id;
     }
 
@@ -41,37 +37,5 @@ public class Repository {
 
     public void setOwner(String owner) {
         this.owner = owner;
-    }
-
-    public String getInstallationId() {
-        return installationId;
-    }
-
-    public void setInstallationId(String installationId) {
-        this.installationId = installationId;
-    }
-
-    public LocalDateTime getCreatedAt() {
-        return createdAt;
-    }
-
-    public void setCreatedAt(LocalDateTime createdAt) {
-        this.createdAt = createdAt;
-    }
-
-    public List<PullRequest> getPullRequests() {
-        return pullRequests;
-    }
-
-    public void setPullRequests(List<PullRequest> pullRequests) {
-        this.pullRequests = pullRequests;
-    }
-
-    public List<Developer> getDevelopers() {
-        return developers;
-    }
-
-    public void setDevelopers(List<Developer> developers) {
-        this.developers = developers;
     }
 }

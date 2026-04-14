@@ -12,7 +12,15 @@ public class Issue {
         this.severity = severity;
     }
 
-    public String getMessage() { return message; }
-    public int getLine() { return line; }
-    public Severity getSeverity() { return severity; }
+    public String getMessage() {
+        return message;
+    }
+
+    public int getLine() {
+        return line;
+    }
+
+    public Severity getSeverity() {
+        return severity;
+    }
 }
