@@ -2,6 +2,7 @@ package com.aicode.service;
 
 import com.aicode.model.Issue;
 import com.aicode.model.Severity;
+import com.aicode.security.JwtUtil;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -10,7 +11,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
+import org.springframework.core.ParameterizedTypeReference;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -157,7 +158,7 @@ public class PRReviewBotService {
             fileAnalyses.add(new FileAnalysis(file.filename, score, fileIssues, new ArrayList<>(), ""));
 
             // Create annotations instead of comments
-            for (Issue issue : result.getIssues()) {
+            for (Issue issue : fileIssues) {
                 if (allAnnotations.size() >= 50)
                     break; // GitHub limit
 
@@ -169,30 +170,29 @@ public class PRReviewBotService {
                 String level = mapSeverityToAnnotationLevel(sev);
 
                 allAnnotations.add(new CodeAnnotation(
-                        file.filename, line, line, level, issue.getMessage()));
-                fileIssues.add(issue);
+                        file.filename, line, line, level, issue.getTitle()));
             }
 
             fileAnalyses.add(new FileAnalysis(
-                    file.filename, result.getScore(), fileIssues,
-                    result.getSuggestions(), result.getImprovedCode()));
+                    file.filename, score, fileIssues,
+                    new ArrayList<>(), ""));
 
             // Per-file summary section
-            String icon = result.getScore() >= 75 ? "✅" : result.getScore() >= 50 ? "⚠️" : "🔴";
+            String icon = score >= 75 ? "✅" : score >= 50 ? "⚠️" : "🔴";
             summary.append(String.format("### %s `%s` — **%.0f/100**\n",
-                    icon, file.filename, result.getScore()));
+                    icon, file.filename, score));
 
-            result.getIssues().stream()
+            fileIssues.stream()
                     .sorted(Comparator.comparingInt(i -> -Severity.fromIssueType(i.getType()).getLevel()))
                     .limit(5)
                     .forEach(i -> {
                         Severity s = Severity.fromIssueType(i.getType());
                         summary.append(String.format("- %s **%s** (line %d): %s\n",
-                                s.getEmoji(), i.getType(), i.getLine(), i.getMessage()));
+                                s.getEmoji(), i.getType(), i.getLine(), i.getTitle()));
                     });
 
-            result.getSuggestions().stream().limit(3)
-                    .forEach(s -> summary.append("- 💡 ").append(s.getMessage()).append("\n"));
+            new ArrayList<String>().stream().limit(3)
+                    .forEach(s -> summary.append("- 💡 ").append(s).append("\n"));
             summary.append("\n");
         }
 
@@ -258,12 +258,15 @@ public class PRReviewBotService {
                         : title;
 
                 List<Map<String, Object>> annotationMaps = batch.stream()
-                        .map(ann -> Map.of(
-                                "path", ann.path(),
-                                "start_line", ann.startLine(),
-                                "end_line", ann.endLine(),
-                                "annotation_level", ann.level(),
-                                "message", ann.message()))
+                        .map(ann -> {
+                            Map<String, Object> map = new HashMap<>();
+                            map.put("path", ann.path());
+                            map.put("start_line", ann.startLine());
+                            map.put("end_line", ann.endLine());
+                            map.put("annotation_level", ann.level());
+                            map.put("message", ann.message());
+                            return map;
+                        })
                         .toList();
 
                 Map<String, Object> output = new HashMap<>();
@@ -326,18 +329,16 @@ public class PRReviewBotService {
         return String.format(
                 "%s **%s — %s**\n\n%s\n\n```suggestion\n%s\n```",
                 sev.getEmoji(), sev.getLabel(), issue.getType(),
-                issue.getMessage(),
+                issue.getTitle(),
                 suggested.stripLeading());
     }
 
-    private int resolveLineNumber(int issueLine, List<Integer> changedLines) {
-        if (changedLines.isEmpty())
+    private int resolveLineNumber(int issueLine, long totalLines) {
+        if (totalLines <= 0)
             return 0;
         if (issueLine <= 0)
-            return changedLines.get(0);
-        return changedLines.stream()
-                .min(Comparator.comparingInt(l -> Math.abs(l - issueLine)))
-                .orElse(changedLines.get(0));
+            return 1;
+        return Math.min(issueLine, (int) totalLines);
     }
 
     // ── GitHub App Authentication ─────────────────────────────
@@ -366,9 +367,10 @@ public class PRReviewBotService {
                     url,
                     HttpMethod.POST,
                     new HttpEntity<>(headers),
-                    Map.class);
+                    new ParameterizedTypeReference<Map<String, Object>>() {
+                    });
 
-            String token = response.getBody().get("token").toString();
+            String token = ((Map<String, Object>) response.getBody()).get("token").toString();
             log.debug("Installation token obtained for installation {}", installationId);
             return token;
 
