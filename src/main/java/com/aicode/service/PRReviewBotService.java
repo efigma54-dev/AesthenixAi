@@ -320,7 +320,7 @@ public class PRReviewBotService {
 
     /**
      * GitHub suggestion block — renders as a diff with "Apply suggestion" button.
-    @SuppressWarnings("unused")
+     * @SuppressWarnings("unused")
      * Extracts the relevant line from the improved code.
      */
     private String formatSuggestionBlock(Severity sev, Issue issue,
@@ -430,7 +430,8 @@ public class PRReviewBotService {
      * outcome, String token, List<PRFile> files) {
      * // ... old implementation removed - now using annotations
      * }
-    @SuppressWarnings("unused")
+     * 
+     * @SuppressWarnings("unused")
      */
     private void completeCheckRun(String repo, String checkRunId, ReviewOutcome outcome, String token,
             List<PRFile> files) {
@@ -486,6 +487,7 @@ public class PRReviewBotService {
             log.warn("Failed to complete check run: {}", e.getMessage());
         }
     }
+
     @SuppressWarnings("unused")
     // ── GitHub REST helpers ────────────────────────────────────
 

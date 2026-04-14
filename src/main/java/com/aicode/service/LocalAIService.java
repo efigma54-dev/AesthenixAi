@@ -21,15 +21,15 @@ import jakarta.annotation.PostConstruct;
  * Local AI service using Ollama for code analysis.
  *
  * Features:
- *   ✓ Caching (avoid re-analyzing identical code)
- *   ✓ Retry logic (network transients)
- *   ✓ Fallback to empty/neutral result (graceful degradation)
- *   ✓ Timeout handling (prevent hanging)
- *   ✓ Metrics tracking (latency, failures)
+ * ✓ Caching (avoid re-analyzing identical code)
+ * ✓ Retry logic (network transients)
+ * ✓ Fallback to empty/neutral result (graceful degradation)
+ * ✓ Timeout handling (prevent hanging)
+ * ✓ Metrics tracking (latency, failures)
  *
  * Interview signal:
- *   "I built fault-tolerant code that provides graceful degradation.
- *    If AI fails, analysis continues with rules-based score instead of crashing."
+ * "I built fault-tolerant code that provides graceful degradation.
+ * If AI fails, analysis continues with rules-based score instead of crashing."
  */
 @Service
 public class LocalAIService {
@@ -66,7 +66,7 @@ public class LocalAIService {
       this.webClient = WebClient.create(ollamaUrl);
     }
     log.info("LocalAIService initialized — enabled={}, url={}, model={}, timeout={}s, retries={}",
-             aiEnabled, ollamaUrl, ollamaModel, ollamaTimeoutSeconds, retryAttempts);
+        aiEnabled, ollamaUrl, ollamaModel, ollamaTimeoutSeconds, retryAttempts);
   }
 
   /**
@@ -118,7 +118,7 @@ public class LocalAIService {
           // Exponential backoff: 500ms, 1s, 2s, ...
           long backoffMs = (long) (500 * Math.pow(2, attempt - 1));
           try {
-            Thread.sleep(Math.min(backoffMs, 5000));  // cap at 5s
+            Thread.sleep(Math.min(backoffMs, 5000)); // cap at 5s
           } catch (InterruptedException ie) {
             Thread.currentThread().interrupt();
             return null;
@@ -131,6 +131,7 @@ public class LocalAIService {
 
   /**
    * Parse AI response JSON into structured AIResult.
+   * 
    * @param fromCache whether this result came from cache (for metrics)
    */
   private AIResult parseAIResponse(String jsonResponse, boolean fromCache) {
@@ -270,7 +271,8 @@ public class LocalAIService {
         {"score":85,"issues":[{"type":"Performance","message":"Use StringBuilder","line":4}],"suggestions":["Use StringBuilder instead of concatenation"],"improvedCode":"// improved code here"}
 
         Analyze this Java code:
-        """ + code + "\n\nJSON only:";
+        """
+        + code + "\n\nJSON only:";
   }
 
   private String callAI(String code) {
@@ -308,10 +310,12 @@ public class LocalAIService {
 
       // Extract JSON object
       int start = responseText.indexOf('{');
-      int end   = responseText.lastIndexOf('}');
-      if (start >= 0 && end > start) responseText = responseText.substring(start, end + 1);
+      int end = responseText.lastIndexOf('}');
+      if (start >= 0 && end > start)
+        responseText = responseText.substring(start, end + 1);
 
-      if (responseText.isBlank()) return fallbackResponse();
+      if (responseText.isBlank())
+        return fallbackResponse();
       return responseText;
 
     } catch (Exception e) {
