@@ -10,9 +10,10 @@ openai:
   base-url: https://api.openai.com/v1
   timeout: 25
 
-# Ollama not available on Render — always use OpenAI in prod
-ai:
-  provider: openai
+# Ollama not available on Render — disable AI, use static analysis only
+# To enable AI on Render: deploy with a GPU instance and set ollama.enabled=true
+ollama:
+  enabled: false
 
 github:
   token: ${GITHUB_TOKEN:}
