@@ -364,14 +364,14 @@ public class PRReviewBotService {
             headers.setBearerAuth(jwt);
 
             rateLimit();
-            ResponseEntity<Map> response = restTemplate.exchange(
+            ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
                     url,
                     HttpMethod.POST,
                     new HttpEntity<>(headers),
                     new ParameterizedTypeReference<Map<String, Object>>() {
                     });
 
-            String token = ((Map<String, Object>) response.getBody()).get("token").toString();
+            String token = response.getBody().get("token").toString();
             log.debug("Installation token obtained for installation {}", installationId);
             return token;
 
