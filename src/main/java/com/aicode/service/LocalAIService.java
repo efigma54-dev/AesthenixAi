@@ -62,7 +62,9 @@ public class LocalAIService {
 
   @PostConstruct
   public void init() {
-    this.webClient = WebClient.create(ollamaUrl);
+    if (ollamaUrl != null) {
+      this.webClient = WebClient.create(ollamaUrl);
+    }
     log.info("LocalAIService initialized — enabled={}, url={}, model={}, timeout={}s, retries={}",
              aiEnabled, ollamaUrl, ollamaModel, ollamaTimeoutSeconds, retryAttempts);
   }
