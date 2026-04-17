@@ -158,35 +158,33 @@ public class CodeReviewController {
     }
 
     // ── GitHub PR webhook ──────────────────────────────────────
-    @PostMapping("/github/webhook")
+    // Both paths accepted — /api/webhooks/github (standard) and /api/github/webhook (legacy)
+    @PostMapping({"/webhooks/github", "/github/webhook"})
     public ResponseEntity<String> githubWebhook(
             @RequestBody String payload,
-            @RequestHeader(value = "X-GitHub-Event", defaultValue = "ping") String eventType) {
-        log.info("GitHub webhook received: event={}", eventType);
+            @RequestHeader(value = "X-GitHub-Event",    defaultValue = "ping") String eventType,
+            @RequestHeader(value = "X-GitHub-Delivery", defaultValue = "")     String deliveryId) {
+        log.info("GitHub webhook: event={} delivery={}", eventType, deliveryId);
 
-        if ("ping".equals(eventType)) {
-            // GitHub sends a ping when the webhook is first configured
+        if ("ping".equals(eventType))
             return ResponseEntity.ok("{\"message\":\"AESTHENIXAI webhook active\"}");
-        }
 
         if ("pull_request".equals(eventType)) {
+            final String id = deliveryId;
             CompletableFuture.runAsync(() -> {
-                try {
-                    prReviewBotService.processPRWebhook(payload, null);
-                } catch (Exception e) {
-                    log.error("PR webhook failed", e);
-                }
+                try { prReviewBotService.processPRWebhook(payload, id.isBlank() ? null : id); }
+                catch (Exception e) { log.error("PR webhook processing failed", e); }
             });
         }
         return ResponseEntity.ok("OK");
     }
 
-    // Browser-accessible webhook probe (GET returns info, not 405)
-    @GetMapping("/github/webhook")
+    // Browser probe — GET returns info instead of 405
+    @GetMapping({"/webhooks/github", "/github/webhook"})
     public ResponseEntity<String> webhookProbe() {
         return ResponseEntity.ok(
-                "{\"status\":\"active\",\"endpoint\":\"POST /api/github/webhook\"," +
-                        "\"events\":[\"pull_request\"],\"bot\":\"AESTHENIXAI\"}");
+            "{\"status\":\"active\",\"endpoint\":\"POST /api/webhooks/github\"," +
+            "\"events\":[\"pull_request\"],\"bot\":\"AESTHENIXAI\"}");
     }
 
     // ── Health ─────────────────────────────────────────────────
