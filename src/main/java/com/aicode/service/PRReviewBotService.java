@@ -108,10 +108,19 @@ public class PRReviewBotService {
             DiffAnalysisEngine.PatchResult patch = diffEngine.parsePatch(file.patch, file.filename);
             if (patch.getAddedLines().size() < 3) continue;
 
-            String changedCode = diffEngine.extractAddedCode(file.patch);
-            if (changedCode.isBlank()) continue;
+            // Prefer full file content (parseable Java) over diff fragments
+            String fullContent = fetchRawContent(file.rawUrl);
+            String codeToAnalyze = fullContent.isBlank()
+                ? diffEngine.extractAddedCode(file.patch)   // fallback: diff only
+                : fullContent;
 
-            AnalysisPipeline.AnalysisResult result = pipeline.analyze(changedCode, file.filename);
+            if (codeToAnalyze.isBlank()) continue;
+
+            log.debug("Analyzing {} ({} chars, {})",
+                file.filename, codeToAnalyze.length(),
+                fullContent.isBlank() ? "diff-only" : "full-file");
+
+            AnalysisPipeline.AnalysisResult result = pipeline.analyze(codeToAnalyze, file.filename);
             totalScore += result.getScore();
             fileCount++;
 
@@ -278,13 +287,33 @@ public class PRReviewBotService {
                 new HttpEntity<>(githubHeaders()), String.class);
             List<PRFile> out = new ArrayList<>();
             for (JsonNode f : mapper.readTree(res.getBody()))
-                out.add(new PRFile(f.path("filename").asText(),
-                                   f.path("patch").asText(""),
-                                   f.path("sha").asText("")));
+                out.add(new PRFile(
+                    f.path("filename").asText(),
+                    f.path("patch").asText(""),
+                    f.path("sha").asText(""),
+                    f.path("raw_url").asText("")   // full file content URL
+                ));
             return out;
         } catch (Exception e) {
             log.error("Failed to fetch PR files: {}", e.getMessage());
             return List.of();
+        }
+    }
+
+    /** Fetch the full file content from raw_url (no auth needed for public repos). */
+    private String fetchRawContent(String rawUrl) {
+        if (rawUrl == null || rawUrl.isBlank()) return "";
+        try {
+            // raw_url is unauthenticated for public repos; add token for private
+            HttpHeaders h = new HttpHeaders();
+            h.set("User-Agent", "AESTHENIXAI-Bot/1.0");
+            if (!githubToken.isBlank()) h.set("Authorization", "token " + githubToken);
+            ResponseEntity<String> res = restTemplate.exchange(
+                rawUrl, HttpMethod.GET, new HttpEntity<>(h), String.class);
+            return res.getBody() != null ? res.getBody() : "";
+        } catch (Exception e) {
+            log.warn("Failed to fetch raw content from {}: {}", rawUrl, e.getMessage());
+            return "";
         }
     }
 
@@ -325,7 +354,7 @@ public class PRReviewBotService {
         };
     }
 
-    private record PRFile(String filename, String patch, String sha) {}
+    private record PRFile(String filename, String patch, String sha, String rawUrl) {}
     private record Annotation(String path, int startLine, int endLine,
                                String level, String message, String title) {}
     private record ReviewOutcome(int avgScore, boolean pass, int annotationCount) {}
