@@ -111,14 +111,20 @@ public class PRReviewBotService {
             // Prefer full file content (parseable Java) over diff fragments
             String fullContent = fetchRawContent(file.rawUrl);
             String codeToAnalyze = fullContent.isBlank()
-                ? diffEngine.extractAddedCode(file.patch)   // fallback: diff only
+                ? diffEngine.extractAddedCode(file.patch)
                 : fullContent;
 
             if (codeToAnalyze.isBlank()) continue;
 
-            log.debug("Analyzing {} ({} chars, {})",
+            // Strip non-ASCII characters (em-dashes, smart quotes etc.) that break JavaParser
+            codeToAnalyze = codeToAnalyze.replaceAll("[^\\x00-\\x7F]", " ");
+
+            // Debug: log first 200 chars so we can see what's being parsed
+            log.info("Analyzing {} ({} chars, {}) preview: {}",
                 file.filename, codeToAnalyze.length(),
-                fullContent.isBlank() ? "diff-only" : "full-file");
+                fullContent.isBlank() ? "diff-only" : "full-file",
+                codeToAnalyze.substring(0, Math.min(200, codeToAnalyze.length()))
+                    .replace("\n", "↵"));
 
             AnalysisPipeline.AnalysisResult result = pipeline.analyze(codeToAnalyze, file.filename);
             totalScore += result.getScore();
@@ -300,19 +306,29 @@ public class PRReviewBotService {
         }
     }
 
-    /** Fetch the full file content from raw_url (no auth needed for public repos). */
     private String fetchRawContent(String rawUrl) {
         if (rawUrl == null || rawUrl.isBlank()) return "";
         try {
-            // raw_url is unauthenticated for public repos; add token for private
+            // Convert github.com/raw/... to raw.githubusercontent.com/... 
+            // to avoid redirect issues with auth headers
+            String url = rawUrl
+                .replace("https://github.com/", "https://raw.githubusercontent.com/")
+                .replace("/raw/", "/");
+
             HttpHeaders h = new HttpHeaders();
             h.set("User-Agent", "AESTHENIXAI-Bot/1.0");
+            h.set("Accept",     "text/plain");
             if (!githubToken.isBlank()) h.set("Authorization", "token " + githubToken);
+
             ResponseEntity<String> res = restTemplate.exchange(
-                rawUrl, HttpMethod.GET, new HttpEntity<>(h), String.class);
-            return res.getBody() != null ? res.getBody() : "";
+                url, HttpMethod.GET, new HttpEntity<>(h), String.class);
+            String body = res.getBody();
+            String filename = url.substring(url.lastIndexOf('/') + 1);
+            log.info("fetchRawContent: {} status={} length={}",
+                filename, res.getStatusCode(), body != null ? body.length() : 0);
+            return body != null ? body : "";
         } catch (Exception e) {
-            log.warn("Failed to fetch raw content from {}: {}", rawUrl, e.getMessage());
+            log.warn("fetchRawContent failed for {}: {}", rawUrl, e.getMessage());
             return "";
         }
     }
