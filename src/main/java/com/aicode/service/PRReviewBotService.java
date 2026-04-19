@@ -109,6 +109,8 @@ public class PRReviewBotService {
             if (patch.getAddedLines().size() < 3) continue;
 
             // Prefer full file content (parseable Java) over diff fragments
+            log.info("PRFile: filename={} rawUrl={}", file.filename,
+                file.rawUrl.isBlank() ? "EMPTY" : file.rawUrl.substring(0, Math.min(60, file.rawUrl.length())));
             String fullContent = fetchRawContent(file.rawUrl);
             String codeToAnalyze = fullContent.isBlank()
                 ? diffEngine.extractAddedCode(file.patch)
@@ -309,11 +311,15 @@ public class PRReviewBotService {
     private String fetchRawContent(String rawUrl) {
         if (rawUrl == null || rawUrl.isBlank()) return "";
         try {
-            // Convert github.com/raw/... to raw.githubusercontent.com/... 
-            // to avoid redirect issues with auth headers
+            // raw_url from GitHub PR files API looks like:
+            // https://github.com/owner/repo/raw/{sha}/path%2Fto%2FFile.java
+            // Convert to raw.githubusercontent.com format:
+            // https://raw.githubusercontent.com/owner/repo/{sha}/path/to/File.java
             String url = rawUrl
                 .replace("https://github.com/", "https://raw.githubusercontent.com/")
-                .replace("/raw/", "/");
+                .replace("/raw/", "/")
+                .replace("%2F", "/")   // decode URL-encoded path separators
+                .replace("%2f", "/");
 
             HttpHeaders h = new HttpHeaders();
             h.set("User-Agent", "AESTHENIXAI-Bot/1.0");
