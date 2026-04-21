@@ -19,27 +19,24 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * GitHub PR Review Bot — token-based, no GitHub App required.
  *
- * Flow:
- *   1. Webhook received (opened / synchronize)
- *   2. Fetch changed files + parse unified diff patches
- *   3. Analyze only added lines (diff-based)
- *   4. Build Check Run annotations (Files tab — like SonarQube)
- *   5. Post summary comment (Conversation tab)
- *   6. Complete Check Run → "success" or "failure" (Checks tab)
- *
- * Requires: GITHUB_TOKEN env var with repo + checks + pull_requests scopes.
+ * Produces:
+ *   - Structured summary comment (Conversation tab) with score, collapsible
+ *     per-file sections, issue breakdown, suggestions, and improved code block
+ *   - Inline PR comments on changed lines for CRITICAL/HIGH issues (Files tab)
+ *   - Check Run annotations (Checks tab — requires GitHub App for full support)
  */
 @Service
 public class PRReviewBotService {
 
     private static final Logger log = LoggerFactory.getLogger(PRReviewBotService.class);
 
-    private static final String GH_API          = "https://api.github.com";
-    private static final int    SCORE_GATE       = 70;
-    private static final int    BATCH_SIZE       = 50;
-    private static final int    MAX_ANNOTATIONS  = 200;
-    private static final long   RATE_DELAY_MS    = 200;
-    private static final String BOT_VERSION      = "v1.0";
+    private static final String GH_API         = "https://api.github.com";
+    private static final int    SCORE_GATE      = 70;
+    private static final int    BATCH_SIZE      = 50;
+    private static final int    MAX_ANNOTATIONS = 200;
+    private static final int    MAX_INLINE      = 5;    // inline comments per PR
+    private static final long   RATE_DELAY_MS   = 200;
+    private static final String BOT_VERSION     = "v1.0";
 
     private final RestTemplate       restTemplate = new RestTemplate();
     private final ObjectMapper       mapper       = new ObjectMapper();
@@ -52,7 +49,7 @@ public class PRReviewBotService {
     private String githubToken;
 
     public PRReviewBotService(AnalysisPipeline pipeline, DiffAnalysisEngine diffEngine) {
-        this.pipeline   = pipeline;
+        this.pipeline  = pipeline;
         this.diffEngine = diffEngine;
     }
 
@@ -63,7 +60,6 @@ public class PRReviewBotService {
             log.info("Skipping duplicate delivery: {}", deliveryId);
             return;
         }
-
         try {
             JsonNode root   = mapper.readTree(payload);
             String   action = root.path("action").asText();
@@ -96,11 +92,11 @@ public class PRReviewBotService {
                                               String headSha, List<PRFile> files) {
         long startMs = System.currentTimeMillis();
 
-        List<Annotation>  rawAnnotations = new ArrayList<>();
+        List<Annotation>   rawAnnotations = new ArrayList<>();
+        List<InlineComment> inlineComments = new ArrayList<>();
+        List<FileResult>   fileResults    = new ArrayList<>();
         int totalScore = 0, fileCount = 0;
         int criticalCount = 0, warningCount = 0, infoCount = 0;
-        StringBuilder summary = new StringBuilder(
-            "## 🤖 AESTHENIXAI Code Review " + BOT_VERSION + "\n\n");
 
         for (PRFile file : files) {
             if (!file.filename.endsWith(".java") || file.patch.isBlank()) continue;
@@ -108,25 +104,19 @@ public class PRReviewBotService {
             DiffAnalysisEngine.PatchResult patch = diffEngine.parsePatch(file.patch, file.filename);
             if (patch.getAddedLines().size() < 3) continue;
 
-            // Prefer full file content (parseable Java) over diff fragments
-            log.info("PRFile: filename={} rawUrl={}", file.filename,
-                file.rawUrl.isBlank() ? "EMPTY" : file.rawUrl.substring(0, Math.min(60, file.rawUrl.length())));
-            String fullContent = fetchRawContent(file.rawUrl);
+            // Fetch full file content for accurate analysis
+            String fullContent  = fetchRawContent(file.rawUrl);
             String codeToAnalyze = fullContent.isBlank()
                 ? diffEngine.extractAddedCode(file.patch)
                 : fullContent;
-
             if (codeToAnalyze.isBlank()) continue;
 
-            // Strip non-ASCII characters (em-dashes, smart quotes etc.) that break JavaParser
+            // Strip non-ASCII (em-dashes etc.) that break JavaParser
             codeToAnalyze = codeToAnalyze.replaceAll("[^\\x00-\\x7F]", " ");
 
-            // Debug: log first 200 chars so we can see what's being parsed
-            log.info("Analyzing {} ({} chars, {}) preview: {}",
+            log.info("Analyzing {} ({} chars, {})",
                 file.filename, codeToAnalyze.length(),
-                fullContent.isBlank() ? "diff-only" : "full-file",
-                codeToAnalyze.substring(0, Math.min(200, codeToAnalyze.length()))
-                    .replace("\n", "↵"));
+                fullContent.isBlank() ? "diff-only" : "full-file");
 
             AnalysisPipeline.AnalysisResult result = pipeline.analyze(codeToAnalyze, file.filename);
             totalScore += result.getScore();
@@ -139,6 +129,8 @@ public class PRReviewBotService {
                 if (line <= 0) continue;
 
                 Severity sev = Severity.fromIssueType(issue.getType());
+
+                // Annotation for Checks tab
                 rawAnnotations.add(new Annotation(
                     file.filename, line, line,
                     toAnnotationLevel(sev),
@@ -146,76 +138,176 @@ public class PRReviewBotService {
                     sev.getEmoji() + " " + sev.getLabel()
                 ));
 
+                // Inline comment for Files tab (CRITICAL + HIGH only, capped)
+                if (sev.getLevel() >= Severity.HIGH.getLevel()
+                        && inlineComments.size() < MAX_INLINE) {
+                    inlineComments.add(new InlineComment(
+                        file.filename, line, headSha,
+                        String.format("%s **%s** — %s\n\n> Detected by AESTHENIXAI static analysis",
+                            sev.getEmoji(), issue.getType(), issue.getMessage())
+                    ));
+                }
+
                 if (sev.getLevel() >= Severity.CRITICAL.getLevel()) criticalCount++;
                 else if (sev.getLevel() >= Severity.HIGH.getLevel()) warningCount++;
                 else infoCount++;
             }
 
-            String icon = result.getScore() >= 75 ? "✅" : result.getScore() >= 50 ? "⚠️" : "🔴";
-            summary.append(String.format("### %s `%s` — **%.0f/100**\n",
-                icon, file.filename, result.getScore()));
-
-            result.getIssues().stream()
-                  .sorted(Comparator.comparingInt(i -> -Severity.fromIssueType(i.getType()).getLevel()))
-                  .limit(5)
-                  .forEach(i -> {
-                      Severity s = Severity.fromIssueType(i.getType());
-                      summary.append(String.format("- %s **%s** (line %d): %s\n",
-                          s.getEmoji(), i.getType(), i.getLine(), i.getMessage()));
-                  });
-
-            result.getSuggestions().stream().limit(3)
-                  .forEach(s -> summary.append("- 💡 ").append(s.getMessage()).append("\n"));
-            summary.append("\n");
+            fileResults.add(new FileResult(
+                file.filename,
+                (int) Math.round(result.getScore()),
+                result.getIssues(),
+                result.getSuggestions().stream().map(s -> s.getMessage()).toList(),
+                result.getImprovedCode()
+            ));
         }
 
-        // Deduplicate
+        // Deduplicate + cap annotations
         Set<String> seen = new HashSet<>();
-        List<Annotation> deduped = rawAnnotations.stream()
+        List<Annotation> annotations = rawAnnotations.stream()
             .filter(a -> seen.add(a.path + ":" + a.startLine + ":" + a.message))
+            .limit(MAX_ANNOTATIONS)
             .toList();
-
-        // Hard cap
-        List<Annotation> annotations = deduped.size() > MAX_ANNOTATIONS
-            ? deduped.subList(0, MAX_ANNOTATIONS) : deduped;
 
         int     avgScore   = fileCount > 0 ? totalScore / fileCount : 0;
         boolean pass       = avgScore >= SCORE_GATE;
         long    durationMs = System.currentTimeMillis() - startMs;
 
-        summary.append("---\n");
-        summary.append(String.format(
-            "**Score: %d/100** | %d file%s | %d annotation%s\n",
-            avgScore, fileCount, fileCount != 1 ? "s" : "",
-            annotations.size(), annotations.size() != 1 ? "s" : ""));
-
-        if (criticalCount + warningCount + infoCount > 0)
-            summary.append(String.format(
-                "**Issues:** 🚨 Critical: %d | ⚠️ Warning: %d | ℹ️ Info: %d\n",
-                criticalCount, warningCount, infoCount));
-
-        summary.append(pass
-            ? "✅ **Quality gate passed.**\n"
-            : String.format("❌ **Quality gate failed** — score %d < threshold %d.\n",
-                avgScore, SCORE_GATE));
-        summary.append(String.format("*Processed in %dms*\n", durationMs));
-
-        if (fileCount > 0) postSummaryComment(repo, prNumber, summary.toString());
+        if (fileCount > 0) {
+            String summaryBody = buildSummaryComment(avgScore, pass, fileResults,
+                criticalCount, warningCount, infoCount, annotations.size(), durationMs);
+            postSummaryComment(repo, prNumber, summaryBody);
+            postInlineComments(repo, prNumber, inlineComments);
+        }
         postCheckRunWithAnnotations(repo, headSha, avgScore, pass, annotations, durationMs);
 
         return new ReviewOutcome(avgScore, pass, annotations.size());
     }
 
-    // ── GitHub Check Runs with annotations ────────────────────
+    // ── Clean summary comment ──────────────────────────────────
+
+    private String buildSummaryComment(int score, boolean pass,
+                                        List<FileResult> files,
+                                        int critical, int warning, int info,
+                                        int annotationCount, long durationMs) {
+        StringBuilder sb = new StringBuilder();
+
+        // Score header
+        String scoreEmoji = score >= 75 ? "🟢" : score >= 50 ? "🟡" : "🔴";
+        sb.append("## 🤖 AESTHENIXAI Code Review ").append(BOT_VERSION).append("\n\n");
+        sb.append(String.format("**Score: %s %d/100** — %s\n\n",
+            scoreEmoji, score,
+            pass ? "Quality gate passed ✅" : "Quality gate failed ❌"));
+
+        // Issue breakdown bar
+        if (critical + warning + info > 0) {
+            sb.append("> ");
+            if (critical > 0) sb.append(String.format("🚨 **%d Critical**&nbsp;&nbsp;", critical));
+            if (warning  > 0) sb.append(String.format("⚠️ **%d Warning**&nbsp;&nbsp;", warning));
+            if (info     > 0) sb.append(String.format("ℹ️ **%d Info**", info));
+            sb.append("\n\n");
+        }
+
+        sb.append("---\n\n");
+
+        // Per-file collapsible sections
+        for (FileResult f : files) {
+            String icon      = f.score >= 75 ? "✅" : f.score >= 50 ? "⚠️" : "🔴";
+            String shortName = f.filename.substring(f.filename.lastIndexOf('/') + 1);
+
+            sb.append(String.format("<details>\n<summary>%s <code>%s</code> — <b>%d/100</b></summary>\n\n",
+                icon, shortName, f.score));
+
+            // Issues grouped by severity
+            List<Issue> crits = f.issues.stream()
+                .filter(i -> Severity.fromIssueType(i.getType()).getLevel() >= Severity.CRITICAL.getLevel())
+                .toList();
+            List<Issue> warns = f.issues.stream()
+                .filter(i -> {
+                    int l = Severity.fromIssueType(i.getType()).getLevel();
+                    return l >= Severity.HIGH.getLevel() && l < Severity.CRITICAL.getLevel();
+                }).toList();
+            List<Issue> infos = f.issues.stream()
+                .filter(i -> Severity.fromIssueType(i.getType()).getLevel() < Severity.HIGH.getLevel())
+                .toList();
+
+            if (!crits.isEmpty()) {
+                sb.append("**🚨 Critical Issues**\n");
+                crits.forEach(i -> sb.append(String.format("- Line %d: %s\n", i.getLine(), i.getMessage())));
+                sb.append("\n");
+            }
+            if (!warns.isEmpty()) {
+                sb.append("**⚠️ Warnings**\n");
+                warns.forEach(i -> sb.append(String.format("- Line %d: %s\n", i.getLine(), i.getMessage())));
+                sb.append("\n");
+            }
+            if (!infos.isEmpty()) {
+                sb.append("**ℹ️ Info**\n");
+                infos.stream().limit(3).forEach(i -> sb.append(String.format("- Line %d: %s\n", i.getLine(), i.getMessage())));
+                sb.append("\n");
+            }
+
+            // Suggestions
+            if (!f.suggestions.isEmpty()) {
+                sb.append("**💡 Suggestions**\n");
+                f.suggestions.stream().limit(3).forEach(s -> sb.append("- ").append(s).append("\n"));
+                sb.append("\n");
+            }
+
+            // Improved code block (collapsible)
+            if (f.improvedCode != null && !f.improvedCode.isBlank()) {
+                sb.append("<details>\n<summary>✨ View improved code</summary>\n\n```java\n");
+                String[] lines = f.improvedCode.split("\n");
+                int limit = Math.min(lines.length, 40);
+                for (int i = 0; i < limit; i++) sb.append(lines[i]).append("\n");
+                if (lines.length > 40) sb.append("// ... (truncated)\n");
+                sb.append("```\n\n</details>\n");
+            }
+
+            sb.append("</details>\n\n");
+        }
+
+        // Footer
+        sb.append("---\n");
+        sb.append(String.format(
+            "*%d file%s · %d annotation%s · %dms · JavaParser + Ollama qwen3.5:9b*\n",
+            files.size(), files.size() != 1 ? "s" : "",
+            annotationCount, annotationCount != 1 ? "s" : "",
+            durationMs));
+
+        return sb.toString();
+    }
+
+    // ── Inline PR comments ─────────────────────────────────────
+
+    private void postInlineComments(String repo, int prNumber, List<InlineComment> comments) {
+        if (githubToken.isBlank() || comments.isEmpty()) return;
+        for (InlineComment c : comments) {
+            try {
+                rateLimit();
+                String url = String.format("%s/repos/%s/pulls/%d/comments", GH_API, repo, prNumber);
+                Map<String, Object> body = new LinkedHashMap<>();
+                body.put("body",      c.body);
+                body.put("commit_id", c.commitId);
+                body.put("path",      c.path);
+                body.put("line",      c.line);
+                body.put("side",      "RIGHT");
+                restTemplate.exchange(url, HttpMethod.POST,
+                    new HttpEntity<>(mapper.writeValueAsString(body), githubHeaders()), String.class);
+                log.info("Inline comment posted: {}:{}", c.path, c.line);
+            } catch (Exception e) {
+                log.warn("Inline comment failed {}:{} — {}", c.path, c.line, e.getMessage());
+            }
+        }
+    }
+
+    // ── GitHub Check Runs ──────────────────────────────────────
 
     private void postCheckRunWithAnnotations(String repo, String headSha,
                                               int score, boolean pass,
                                               List<Annotation> annotations,
                                               long durationMs) {
-        if (githubToken.isBlank()) {
-            log.warn("No GITHUB_TOKEN — skipping check run");
-            return;
-        }
+        if (githubToken.isBlank()) return;
 
         String conclusion = pass ? "success" : "failure";
         String title = pass
@@ -227,7 +319,6 @@ public class PRReviewBotService {
 
         for (int i = 0; i < batches.size(); i++) {
             List<Annotation> batch = batches.get(i);
-
             List<Map<String, Object>> annotationMaps = batch.stream()
                 .map(a -> {
                     Map<String, Object> m = new LinkedHashMap<>();
@@ -238,8 +329,7 @@ public class PRReviewBotService {
                     m.put("message",          a.message);
                     m.put("title",            a.title);
                     return m;
-                })
-                .toList();
+                }).toList();
 
             Map<String, Object> output = new LinkedHashMap<>();
             output.put("title",   title);
@@ -299,7 +389,7 @@ public class PRReviewBotService {
                     f.path("filename").asText(),
                     f.path("patch").asText(""),
                     f.path("sha").asText(""),
-                    f.path("raw_url").asText("")   // full file content URL
+                    f.path("raw_url").asText("")
                 ));
             return out;
         } catch (Exception e) {
@@ -311,14 +401,11 @@ public class PRReviewBotService {
     private String fetchRawContent(String rawUrl) {
         if (rawUrl == null || rawUrl.isBlank()) return "";
         try {
-            // raw_url from GitHub PR files API looks like:
-            // https://github.com/owner/repo/raw/{sha}/path%2Fto%2FFile.java
-            // Convert to raw.githubusercontent.com format:
-            // https://raw.githubusercontent.com/owner/repo/{sha}/path/to/File.java
+            // Convert github.com/raw/{sha}/path%2F... → raw.githubusercontent.com/{sha}/path/...
             String url = rawUrl
                 .replace("https://github.com/", "https://raw.githubusercontent.com/")
                 .replace("/raw/", "/")
-                .replace("%2F", "/")   // decode URL-encoded path separators
+                .replace("%2F", "/")
                 .replace("%2f", "/");
 
             HttpHeaders h = new HttpHeaders();
@@ -329,9 +416,9 @@ public class PRReviewBotService {
             ResponseEntity<String> res = restTemplate.exchange(
                 url, HttpMethod.GET, new HttpEntity<>(h), String.class);
             String body = res.getBody();
-            String filename = url.substring(url.lastIndexOf('/') + 1);
             log.info("fetchRawContent: {} status={} length={}",
-                filename, res.getStatusCode(), body != null ? body.length() : 0);
+                url.substring(url.lastIndexOf('/') + 1),
+                res.getStatusCode(), body != null ? body.length() : 0);
             return body != null ? body : "";
         } catch (Exception e) {
             log.warn("fetchRawContent failed for {}: {}", rawUrl, e.getMessage());
@@ -376,8 +463,13 @@ public class PRReviewBotService {
         };
     }
 
+    // ── Inner types ────────────────────────────────────────────
+
     private record PRFile(String filename, String patch, String sha, String rawUrl) {}
     private record Annotation(String path, int startLine, int endLine,
                                String level, String message, String title) {}
+    private record InlineComment(String path, int line, String commitId, String body) {}
+    private record FileResult(String filename, int score, List<Issue> issues,
+                               List<String> suggestions, String improvedCode) {}
     private record ReviewOutcome(int avgScore, boolean pass, int annotationCount) {}
 }
