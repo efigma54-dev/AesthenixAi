@@ -10,10 +10,20 @@ openai:
   base-url: https://api.openai.com/v1
   timeout: 25
 
-# Ollama not available on Render — disable AI, use static analysis only
-# To enable AI on Render: deploy with a GPU instance and set ollama.enabled=true
+# AI provider on Render:
+# - Set OPENAI_API_KEY env var in Render dashboard to use OpenAI
+# - Leave unset to use static analysis only (still gives real scores)
 ollama:
-  enabled: false
+  enabled: ${OLLAMA_ENABLED:false}
+
+openai:
+  api-key: ${OPENAI_API_KEY:}
+  model: ${OPENAI_MODEL:gpt-4o}
+  base-url: https://api.openai.com/v1
+  timeout: 25
+
+ai:
+  provider: ${AI_PROVIDER:openai}
 
 github:
   token: ${GITHUB_TOKEN:}

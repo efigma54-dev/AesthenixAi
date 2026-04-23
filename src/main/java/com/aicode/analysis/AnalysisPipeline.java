@@ -36,9 +36,13 @@ public class AnalysisPipeline {
 
     public AnalysisPipeline(RuleEngine ruleEngine, LocalAIService aiService,
                             PostProcessor postProcessor, ScoringEngine scoringEngine) {
-        this.javaParser   = new JavaParser();
-        this.ruleEngine   = ruleEngine;
-        this.aiService    = aiService;
+        // Configure for Java 17 — enables records, switch expressions, text blocks
+        com.github.javaparser.ParserConfiguration cfg =
+            new com.github.javaparser.ParserConfiguration()
+                .setLanguageLevel(com.github.javaparser.ParserConfiguration.LanguageLevel.JAVA_17);
+        this.javaParser    = new JavaParser(cfg);
+        this.ruleEngine    = ruleEngine;
+        this.aiService     = aiService;
         this.postProcessor = postProcessor;
         this.scoringEngine = scoringEngine;
     }
