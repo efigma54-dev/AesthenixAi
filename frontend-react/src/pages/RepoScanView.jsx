@@ -1,6 +1,11 @@
 import { useState } from 'react';
 import { scanRepository, ApiError, friendlyMessage } from '../lib/api';
 
+const EXAMPLES = [
+  'https://github.com/spring-projects/spring-petclinic',
+  'https://github.com/iluwatar/java-design-patterns',
+];
+
 function RepoScanView() {
   const [repoUrl, setRepoUrl] = useState('');
   const [token, setToken] = useState('');
@@ -9,14 +14,22 @@ function RepoScanView() {
   const [error, setError] = useState(null);
 
   const handleScan = async () => {
-    if (!repoUrl.trim()) return;
+    const url = repoUrl.trim();
+    if (!url) return;
+
+    // Validate URL format before hitting the network
+    if (!url.match(/^https?:\/\/github\.com\/[^/]+\/[^/]+/)) {
+      setStatus('error');
+      setError('Enter a full GitHub URL — e.g. https://github.com/owner/repository');
+      return;
+    }
 
     setStatus('loading');
     setError(null);
     setScanResult(null);
 
     try {
-      const result = await scanRepository(repoUrl.trim(), token.trim() || null);
+      const result = await scanRepository(url, token.trim() || null);
       setScanResult(result);
       setStatus('success');
     } catch (err) {
@@ -66,6 +79,7 @@ function RepoScanView() {
               placeholder="https://github.com/owner/repository"
               value={repoUrl}
               onChange={(e) => setRepoUrl(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleScan()}
               style={{
                 width: '100%',
                 padding: '12px 16px',
@@ -76,6 +90,23 @@ function RepoScanView() {
                 fontSize: '14px'
               }}
             />
+            {/* Example repos */}
+            <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              <span style={{ fontSize: 11, color: '#4b5563' }}>Try:</span>
+              {EXAMPLES.map((ex) => (
+                <button
+                  key={ex}
+                  onClick={() => setRepoUrl(ex)}
+                  style={{
+                    fontSize: 11, padding: '2px 8px', borderRadius: 4, cursor: 'pointer',
+                    background: 'rgba(127,90,240,0.08)', color: '#a78bfa',
+                    border: '1px solid rgba(127,90,240,0.2)',
+                  }}
+                >
+                  {ex.replace('https://github.com/', '')}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div>

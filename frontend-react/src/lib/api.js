@@ -13,13 +13,13 @@
  */
 
 /* ─── Config ─────────────────────────────────────────────── */
-const BASE = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
-const TIMEOUT_MS = 12_000;
-const MAX_RETRIES = 2;
-const RETRY_BASE_MS = 800;
+const BASE = import.meta.env.VITE_API_URL || 'http://localhost:8082/api';
+const TIMEOUT_MS = 180_000;  // 3 min — AI analysis can take 30-150s
+const MAX_RETRIES = 1;       // 1 retry on network/timeout (not 2 — AI is slow)
+const RETRY_BASE_MS = 2000;
 const MAX_CODE_BYTES = 100_000;
 const GITHUB_TIMEOUT = 8_000;
-const MIN_GAP_MS = 5_000;   // minimum ms between analysis requests
+const MIN_GAP_MS = 1_000;   // 1s cooldown — was 5s, too aggressive
 
 /* ─── Request cooldown ───────────────────────────────────── */
 let _lastRequestAt = 0;
@@ -54,12 +54,12 @@ export class ApiError extends Error {
 
 /* ─── User-facing messages ───────────────────────────────── */
 const MESSAGES = {
-  network: `Cannot reach the backend at ${BASE}. Make sure it is running (./mvnw spring-boot:run).`,
+  network: `Cannot reach the backend at ${BASE}. Make sure it is running (mvn spring-boot:run).`,
   timeout: 'The server took too long to respond. It may be busy — try again in a moment.',
-  server: 'The server returned an error. Check the backend logs for details.',
+  server: 'The server returned an error.',   // detail appended from response body
   validation: 'The request was rejected — check your input and try again.',
-  ratelimit: 'Too many requests. Wait a few seconds before retrying.',
-  auth: 'API key is missing or invalid. Set OPENAI_API_KEY on the backend.',
+  ratelimit: 'Too many requests — the server is busy. Wait a few seconds and try again.',
+  auth: 'Authentication failed. Check your API configuration.',
   unknown: 'An unexpected error occurred.',
 };
 
@@ -70,8 +70,9 @@ const MESSAGES = {
  */
 export function friendlyMessage(err, { filename, attempt, total } = {}) {
   const base = err instanceof ApiError ? (MESSAGES[err.type] ?? err.message) : MESSAGES.unknown;
+  // Always show server error detail — it contains the actual reason (e.g. "Code exceeds limit")
   const detail = err instanceof ApiError && err.message && err.message !== base
-    ? ` (${err.message})`
+    ? `: ${err.message}`
     : '';
   const prefix = filename ? `${filename}: ` : '';
   const retry = attempt != null && total != null ? ` [Attempt ${attempt}/${total}]` : '';
@@ -221,7 +222,97 @@ export async function checkHealth() {
 }
 
 /**
- * Analyse a single Java file.
+ * Analyse a single file using the async job queue.
+ *
+ * Flow:
+ *   1. POST /review/async → { jobId }  (returns immediately)
+ *   2. Poll GET /review/async/{jobId} every 1s until status == "done" | "error"
+ *
+ * This makes the UI feel instant — the button responds in <100ms
+ * and the spinner updates as the job progresses.
+ *
+ * @param {string}   code
+ * @param {object}   [opts]
+ * @param {AbortSignal} [opts.signal]
+ * @param {function} [opts.onStatus]  called with status string on each poll
+ */
+export async function reviewCodeAsync(code, { signal, onStatus } = {}) {
+  validateCode(code);
+
+  // Submit job
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+  const onAbort = () => ctrl.abort();
+  signal?.addEventListener('abort', onAbort);
+
+  let jobId;
+  try {
+    const res = await fetch(`${BASE}/review/async`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+      signal: ctrl.signal,
+    });
+    clearTimeout(timer);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new ApiError('server', data.error ?? `HTTP ${res.status}`, true, res.status);
+    }
+    const { jobId: id } = await res.json();
+    jobId = id;
+  } catch (err) {
+    clearTimeout(timer);
+    signal?.removeEventListener('abort', onAbort);
+    if (err instanceof ApiError) throw err;
+    if (err.name === 'AbortError') throw new ApiError('timeout', 'Request cancelled', false);
+    throw new ApiError('network', err.message ?? 'Network error', true);
+  }
+
+  // Poll until done
+  const POLL_MS = 1_000;
+  const MAX_POLLS = 200; // 200s max
+  for (let i = 0; i < MAX_POLLS; i++) {
+    if (signal?.aborted) {
+      signal.removeEventListener('abort', onAbort);
+      throw new ApiError('timeout', 'Analysis cancelled', false);
+    }
+    await sleep(POLL_MS);
+
+    try {
+      const res = await fetch(`${BASE}/review/async/${jobId}`, { signal });
+      if (!res.ok) continue; // transient error — keep polling
+      const job = await res.json();
+      onStatus?.(job.status);
+
+      if (job.status === 'done') {
+        signal?.removeEventListener('abort', onAbort);
+        return normalize(job.result);
+      }
+      if (job.status === 'error' || job.status === 'failed') {
+        signal?.removeEventListener('abort', onAbort);
+        throw new ApiError('server', job.error ?? 'Analysis failed', false);
+      }
+      if (job.status === 'timeout') {
+        signal?.removeEventListener('abort', onAbort);
+        throw new ApiError('timeout', job.error ?? 'Analysis timed out on the server', false);
+      }
+      // status == "queued" | "running" — keep polling
+    } catch (err) {
+      if (err instanceof ApiError) throw err;
+      if (err.name === 'AbortError') {
+        signal?.removeEventListener('abort', onAbort);
+        throw new ApiError('timeout', 'Analysis cancelled', false);
+      }
+      // Network blip — keep polling
+    }
+  }
+
+  signal?.removeEventListener('abort', onAbort);
+  throw new ApiError('timeout', 'Analysis timed out after 200s', false);
+}
+
+/**
+ * Analyse a single Java file (synchronous — blocks until result).
  *
  * Features:
  *  - Pre-validates input before any network call.
@@ -246,11 +337,15 @@ export async function reviewCode(code, { signal, bustCache = false, onRetryAttem
     if (hit) return { ...hit, fromCache: true };
   }
 
-  // 2. Cooldown — block rapid repeated requests (free-tier protection)
-  checkCooldown();
+  // 2. Cooldown — only when using cache (not when user explicitly re-runs)
+  if (!bustCache) {
+    checkCooldown();
+  } else {
+    _lastRequestAt = Date.now(); // still update timestamp
+  }
 
-  // 3. In-flight deduplication
-  if (_inflight.has(key)) return _inflight.get(key);
+  // 3. In-flight deduplication — skip when busting cache
+  if (!bustCache && _inflight.has(key)) return _inflight.get(key);
 
   // 3. New request
   const promise = apiFetch('/review', { code }, signal, onRetryAttempt)
@@ -311,109 +406,16 @@ export async function reviewMultipleFiles(files, { onProgress, signal } = {}) {
 }
 
 /**
- * Stream code review results in real-time using Server-Sent Events.
- *
- * @param {string} code - The code to review
- * @param {object} [opts] - Options
- * @param {function} [opts.onChunk] - Called for each streaming chunk (partial text)
- * @param {function} [opts.onComplete] - Called when streaming completes with final result
- * @param {function} [opts.onError] - Called on error
- * @param {AbortSignal} [opts.signal] - Abort signal
- * @returns {object} - { stop: function, promise: Promise }
+ * reviewCodeStreaming — redirects to reviewCode.
+ * The streaming endpoint (/review/stream/final) does not exist on the backend.
+ * Kept for API compatibility; callers should use reviewCode() directly.
  */
-export function reviewCodeStreaming(code, { onChunk, onComplete, onError, signal } = {}) {
-  validateCode(code);
-
-  let currentStream = null;
-  let isStopped = false;
-  let buffer = '';
-  let throttleTimer = null;
-
-  const stop = () => {
-    isStopped = true;
-    if (currentStream) {
-      currentStream.close();
-      currentStream = null;
-    }
-    if (throttleTimer) {
-      clearTimeout(throttleTimer);
-      throttleTimer = null;
-    }
-  };
-
-  const promise = new Promise(async (resolve, reject) => {
-    if (signal?.aborted) {
-      reject(new Error('Aborted'));
-      return;
-    }
-
-    const url = new URL('/review/stream', import.meta.env.VITE_API_URL || 'http://localhost:8080');
-    url.searchParams.set('code', code);
-
-    currentStream = new EventSource(url);
-
-    const flushBuffer = () => {
-      if (buffer && !isStopped) {
-        onChunk?.(buffer);
-        buffer = '';
-      }
-    };
-
-    currentStream.onmessage = (event) => {
-      if (isStopped) return;
-
-      const data = event.data;
-
-      if (data === '[DONE]') {
-        // Flush any remaining buffer
-        flushBuffer();
-        // Get final structured result
-        fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8080'}/api/review/stream/final`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ code })
-        })
-        .then(res => res.json())
-        .then(finalResult => {
-          if (!isStopped) {
-            onComplete?.(normalize(finalResult));
-            resolve(normalize(finalResult));
-          }
-        })
-        .catch(err => {
-          if (!isStopped) {
-            onError?.(err);
-            reject(err);
-          }
-        })
-        .finally(() => {
-          stop();
-        });
-        return;
-      }
-
-      // Accumulate chunks with throttling
-      buffer += data;
-
-      if (throttleTimer) clearTimeout(throttleTimer);
-      throttleTimer = setTimeout(flushBuffer, 50); // Throttle updates every 50ms
-    };
-
-    currentStream.onerror = (event) => {
-      if (!isStopped) {
-        stop();
-        const error = new ApiError('network', 'Streaming connection failed', true);
-        onError?.(error);
-        reject(error);
-      }
-    };
-
-    signal?.addEventListener('abort', () => {
-      stop();
-      reject(new Error('Aborted'));
-    });
-  });
-
+export function reviewCodeStreaming(code, { onComplete, onError, signal } = {}) {
+  let stopped = false;
+  const stop = () => { stopped = true; };
+  const promise = reviewCode(code, { signal })
+    .then((data) => { if (!stopped) onComplete?.(data); return data; })
+    .catch((err) => { if (!stopped) onError?.(err); throw err; });
   return { stop, promise };
 }
 
@@ -485,6 +487,23 @@ export async function collectJavaFiles(owner, repo, path = '', collected = [], l
   }
 
   return collected;
+}
+
+/**
+ * Apply safe, non-breaking code fixes.
+ * 
+ * @param {string} code - Code to fix
+ * @returns {Promise} Fixed code and list of applied fixes
+ */
+export async function applySafeFixes(code) {
+  validateCode(code);
+
+  try {
+    const response = await apiFetch('/fix/safe', { code });
+    return response;
+  } catch (err) {
+    throw err instanceof ApiError ? err : new ApiError('unknown', err.message ?? 'Failed to apply fixes', false);
+  }
 }
 
 /**

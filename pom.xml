@@ -112,6 +112,14 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+
+        <!-- jqwik — property-based testing -->
+        <dependency>
+            <groupId>net.jqwik</groupId>
+            <artifactId>jqwik</artifactId>
+            <version>1.8.4</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>

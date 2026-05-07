@@ -15,7 +15,15 @@ import java.util.concurrent.atomic.AtomicInteger;
 @Service
 public class CodeAnalysisService {
 
-    private final JavaParser javaParser = new JavaParser();
+    private final JavaParser javaParser;
+
+    public CodeAnalysisService() {
+        // Configure for Java 17 — enables records, switch expressions, text blocks
+        com.github.javaparser.ParserConfiguration config =
+            new com.github.javaparser.ParserConfiguration()
+                .setLanguageLevel(com.github.javaparser.ParserConfiguration.LanguageLevel.JAVA_17);
+        this.javaParser = new JavaParser(config);
+    }
 
     public ParsedCodeInfo analyze(String code) {
         ParseResult<CompilationUnit> result = javaParser.parse(code);

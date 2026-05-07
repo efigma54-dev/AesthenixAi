@@ -36,14 +36,22 @@ public class AnalysisPipeline {
 
     public AnalysisPipeline(RuleEngine ruleEngine, LocalAIService aiService,
                             PostProcessor postProcessor, ScoringEngine scoringEngine) {
-        this.javaParser   = new JavaParser();
-        this.ruleEngine   = ruleEngine;
-        this.aiService    = aiService;
+        // Configure for Java 17 — enables records, switch expressions, text blocks
+        com.github.javaparser.ParserConfiguration cfg =
+            new com.github.javaparser.ParserConfiguration()
+                .setLanguageLevel(com.github.javaparser.ParserConfiguration.LanguageLevel.JAVA_17);
+        this.javaParser    = new JavaParser(cfg);
+        this.ruleEngine    = ruleEngine;
+        this.aiService     = aiService;
         this.postProcessor = postProcessor;
         this.scoringEngine = scoringEngine;
     }
 
     public AnalysisResult analyze(String code, String filePath) {
+        return analyze(code, filePath, "anonymous");
+    }
+
+    public AnalysisResult analyze(String code, String filePath, String identity) {
         long start = System.currentTimeMillis();
         try {
             // Phase 1: parse
@@ -53,8 +61,11 @@ public class AnalysisPipeline {
             // Phase 2: rules
             RuleEngine.RuleResult ruleResult = ruleEngine.run(parsed.getCompilationUnit(), filePath);
 
-            // Phase 3: AI
-            com.aicode.model.AIResult aiResult = aiService.analyzeCode(code);
+            // Phase 3: AI — always run for suggestions + improved code; skip only if explicitly disabled
+
+            com.aicode.model.AIResult aiResult;
+            log.info("Running AI analysis via qwen2.5-coder:7b");
+            aiResult = aiService.analyzeCode(code, "java", identity);
 
             // Phase 4: merge
             MergedResult merged = postProcessor.merge(ruleResult, aiResult, parsed);
@@ -66,7 +77,8 @@ public class AnalysisPipeline {
             log.info("Pipeline complete in {}ms — score={:.1f}, issues={}", ms, score, merged.getIssues().size());
 
             return new AnalysisResult(score, merged.getIssues(), merged.getSuggestions(),
-                    aiResult.getImprovedCode(), ms, "success");
+                    aiResult.getImprovedCode(), ms, "success",
+                    aiResult.isAiSkipped(), aiResult.getAiSkipReason());
 
         } catch (Exception e) {
             long ms = System.currentTimeMillis() - start;
@@ -102,15 +114,25 @@ public class AnalysisPipeline {
         private final String improvedCode;
         private final long processingTimeMs;
         private final String status;
+        private final boolean aiSkipped;
+        private final String aiSkipReason;
 
         public AnalysisResult(double score, List<Issue> issues, List<Suggestion> suggestions,
                               String improvedCode, long processingTimeMs, String status) {
+            this(score, issues, suggestions, improvedCode, processingTimeMs, status, false, null);
+        }
+
+        public AnalysisResult(double score, List<Issue> issues, List<Suggestion> suggestions,
+                              String improvedCode, long processingTimeMs, String status,
+                              boolean aiSkipped, String aiSkipReason) {
             this.score           = score;
             this.issues          = issues;
             this.suggestions     = suggestions;
             this.improvedCode    = improvedCode != null ? improvedCode : "";
             this.processingTimeMs = processingTimeMs;
             this.status          = status;
+            this.aiSkipped       = aiSkipped;
+            this.aiSkipReason    = aiSkipReason;
         }
 
         public double getScore()            { return score; }
@@ -119,6 +141,8 @@ public class AnalysisPipeline {
         public String getImprovedCode()     { return improvedCode; }
         public long getProcessingTimeMs()   { return processingTimeMs; }
         public String getStatus()           { return status; }
+        public boolean isAiSkipped()        { return aiSkipped; }
+        public String getAiSkipReason()     { return aiSkipReason; }
     }
 
     public static class ParsedCode {

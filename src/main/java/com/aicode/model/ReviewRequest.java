@@ -11,6 +11,9 @@ public class ReviewRequest {
     @Size(max = 100_000, message = "Code exceeds the 100 KB limit")
     private String code;
 
+    /** Language hint from the client — "java", "javascript", "typescript", "python", etc. */
+    private String language = "java";
+
     /** Returns sanitized code — strips null bytes, normalizes line endings */
     public String getSanitizedCode() {
         if (code == null) return "";
@@ -18,5 +21,9 @@ public class ReviewRequest {
                 .replace("\u0000", "")   // strip null bytes
                 .replace("\r\n", "\n")   // normalize CRLF
                 .strip();
+    }
+
+    public String getLanguage() {
+        return language == null || language.isBlank() ? "java" : language.toLowerCase();
     }
 }

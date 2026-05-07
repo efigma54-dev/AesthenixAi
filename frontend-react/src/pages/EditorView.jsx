@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
 import ReviewPanel from '../components/ReviewPanel';
 import FileExplorer from '../components/FileExplorer';
-import { reviewCode, reviewCodeStreaming, checkHealth, friendlyMessage, ApiError } from '../lib/api';
+import { reviewCode, reviewCodeAsync, checkHealth, friendlyMessage, ApiError } from '../lib/api';
 import { saveReview } from '../lib/history';
 
 // Lazy-load heavy components so they don't block initial render
@@ -43,10 +43,13 @@ const SAMPLE = {
 /* ── Progress steps shown during loading ─────────────────── */
 const STEPS = [
   'Checking server…',
-  'Sending request…',
-  'Analyzing code…',
+  'Queued — waiting for worker…',
+  'Running — AI analyzing…',
   'Finalizing results…',
 ];
+
+// Map job status → step index
+const STATUS_TO_STEP = { queued: 1, running: 2, done: 3 };
 
 function RunButton({ onClick, onStop, status, disabled, isStreaming }) {
   const loading = status === 'loading';
@@ -147,8 +150,7 @@ export default function EditorView({ runTrigger = 0, clearTrigger = 0, restoreIt
   const [step, setStep] = useState(0);        // loading step index
   const [retryLabel, setRetryLabel] = useState('');     // "Attempt 2 of 3…"
   const [scrollToLine, setScrollToLine] = useState(null); // line to scroll editor to
-  const [streamingText, setStreamingText] = useState(''); // accumulated streaming text
-  const [currentStream, setCurrentStream] = useState(null); // current stream reference
+  const [analysisTime, setAnalysisTime] = useState(null); // time taken for analysis
 
   const prevRun = useRef(0);
   const prevClear = useRef(0);
@@ -188,16 +190,13 @@ export default function EditorView({ runTrigger = 0, clearTrigger = 0, restoreIt
     }
   }, [clearTrigger]);
 
-  // Cleanup on unmount or file change
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (currentStream) {
-        currentStream.stop();
-      }
       abortRef.current?.abort();
       clearInterval(stepTimer.current);
     };
-  }, [currentStream]);
+  }, []);
 
   /* ── File management ──────────────────────────────────── */
   const updateActiveContent = (content) => {
@@ -229,15 +228,8 @@ export default function EditorView({ runTrigger = 0, clearTrigger = 0, restoreIt
 
   /* ── Analysis ─────────────────────────────────────────── */
   const run = useCallback(async () => {
-    if (status === 'loading' || !code.trim()) return;
+    if (!code.trim()) return;
 
-    // Stop any existing stream
-    if (currentStream) {
-      currentStream.stop();
-      setCurrentStream(null);
-    }
-
-    // Cancel any in-flight request
     abortRef.current?.abort();
     abortRef.current = new AbortController();
 
@@ -246,84 +238,65 @@ export default function EditorView({ runTrigger = 0, clearTrigger = 0, restoreIt
     setResult(null);
     setRetryLabel('');
     setStep(0);
-    setStreamingText('');
+    setAnalysisTime(null);
 
-    // Cycle through progress steps
+    const startTime = Date.now();
+
+    // Cycle through progress steps while waiting
     let s = 0;
     stepTimer.current = setInterval(() => {
       s = Math.min(s + 1, STEPS.length - 1);
       setStep(s);
-    }, 1800);
+    }, 2500);
 
     try {
-      // Step 0: health pre-check — block immediately if backend is down
+      // Health pre-check — fail fast if backend is down
       const healthy = await checkHealth();
       if (!healthy) {
         throw new ApiError(
           'network',
-          `Backend not reachable at ${import.meta.env.VITE_API_URL || 'http://localhost:8080'}. Run: ./mvnw spring-boot:run`,
+          `Backend not reachable at ${import.meta.env.VITE_API_URL || 'http://localhost:8082/api'}. Run: mvn spring-boot:run`,
           true
         );
       }
 
-      setStep(1); // "Sending request…"
+      setStep(1);
 
-      const streamResult = reviewCodeStreaming(code, {
+      // Use async job queue — UI responds instantly, polls for result
+      const data = await reviewCodeAsync(code, {
         signal: abortRef.current.signal,
-        onChunk: (chunk) => {
-          setStreamingText(prev => prev + chunk);
-          setStep(2); // "Analyzing code…" - show streaming is active
-        },
-        onComplete: (data) => {
-          setRetryLabel('');
-          setResult(data);
-          setStatus('success');
-          setStreamingText(''); // Clear streaming text on completion
-          setCurrentStream(null);
-          saveReview({ code, score: data.score, issues: data.issues, filename: activeFile?.name ?? 'untitled.java' });
-        },
-        onError: (err) => {
-          if (err.name === 'AbortError') return; // user navigated away — no error shown
-          setStatus('error');
-          setErrorInfo({
-            message: friendlyMessage(err),
-            retryable: err.retryable ?? true,
-          });
-          setStreamingText(''); // Clear streaming text on error
-          setCurrentStream(null);
+        onStatus: (status) => {
+          const s = STATUS_TO_STEP[status];
+          if (s != null) setStep(s);
         },
       });
 
-      setCurrentStream(streamResult);
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+      setAnalysisTime(elapsed);
 
-      await streamResult.promise;
+      setResult(data);
+      setStatus('success');
+      saveReview({ code, score: data.score, issues: data.issues, filename: activeFile?.name ?? 'untitled.java' });
     } catch (err) {
-      if (err.name === 'AbortError') return; // user navigated away — no error shown
+      if (err.name === 'AbortError') return;
       setStatus('error');
       setErrorInfo({
         message: friendlyMessage(err),
         retryable: err instanceof ApiError ? err.retryable : true,
       });
-      setStreamingText(''); // Clear streaming text on error
-      setCurrentStream(null);
     } finally {
       clearInterval(stepTimer.current);
       setRetryLabel('');
     }
-  }, [code, status, activeFile, currentStream]);
+  }, [code, activeFile]);
 
   const stopAnalysis = useCallback(() => {
-    if (currentStream) {
-      currentStream.stop();
-      setCurrentStream(null);
-    }
     abortRef.current?.abort();
     setStatus('idle');
-    setStreamingText('');
     setResult(null);
     setErrorInfo(null);
     clearInterval(stepTimer.current);
-  }, [currentStream]);
+  }, []);
 
   /* ── Click issue → scroll editor to line ─────────────── */
   const handleIssueClick = (line) => {
@@ -367,7 +340,7 @@ export default function EditorView({ runTrigger = 0, clearTrigger = 0, restoreIt
               {status === 'error' && errorInfo && (
                 <ErrorBanner message={errorInfo.message} retryable={errorInfo.retryable} onRetry={run} />
               )}
-              <RunButton onClick={run} onStop={stopAnalysis} status={status} disabled={status === 'loading' || !code.trim()} isStreaming={!!currentStream} />
+              <RunButton onClick={run} onStop={stopAnalysis} status={status} disabled={status === 'loading' || !code.trim()} isStreaming={false} />
             </div>
 
             {/* Right: results */}
@@ -376,8 +349,15 @@ export default function EditorView({ runTrigger = 0, clearTrigger = 0, restoreIt
               status={status}
               step={step}
               retryLabel={retryLabel}
-              streamingText={streamingText}
               onIssueClick={handleIssueClick}
+              originalCode={code}
+              analysisTime={analysisTime}
+              onCodeFixed={(fixedCode, appliedFixes) => {
+                // Update the editor with fixed code
+                updateActiveContent(fixedCode);
+                // Optionally re-run analysis to show improvement
+                setTimeout(() => run(), 500);
+              }}
             />
           </div>
 

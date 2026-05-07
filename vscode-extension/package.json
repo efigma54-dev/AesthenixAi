@@ -1,25 +1,43 @@
 {
   "name": "aesthenixai",
-  "displayName": "AESTHENIXAI — Code Analysis",
-  "description": "AI-powered Java code analysis: quality score, issue detection, and refactoring suggestions powered by GPT-4o + static analysis.",
-  "version": "0.2.0",
+  "displayName": "AESTHENIXAI — AI Code Reviewer",
+  "description": "AI-powered code review with inline fixes, diagnostics, and refactoring for Java, JavaScript, TypeScript, and Python. Powered by local AI (Ollama) + static analysis.",
+  "version": "0.3.0",
   "publisher": "aesthenixai",
   "license": "MIT",
+  "homepage": "https://github.com/your-username/ai-code-reviewer#readme",
+  "bugs": {
+    "url": "https://github.com/your-username/ai-code-reviewer/issues"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/your-username/ai-code-reviewer"
   },
+  "galleryBanner": {
+    "color": "#0b0b0f",
+    "theme": "dark"
+  },
   "engines": { "vscode": "^1.85.0" },
-  "categories": ["Linters", "Other"],
-  "keywords": ["java", "ai", "code review", "static analysis", "refactoring"],
+  "categories": ["Linters", "Other", "AI"],
+  "keywords": [
+    "ai", "code review", "lint", "refactor", "copilot",
+    "java", "javascript", "typescript", "python",
+    "static analysis", "diagnostics", "ollama"
+  ],
   "icon": "media/icon.png",
-  "activationEvents": [],
+  "activationEvents": [
+    "onLanguage:java",
+    "onLanguage:javascript",
+    "onLanguage:typescript",
+    "onLanguage:python"
+  ],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
       {
         "command": "aesthenix.analyze",
-        "title": "AESTHENIXAI: Analyze Current File"
+        "title": "AESTHENIXAI: Analyze Current File",
+        "icon": "$(sparkle)"
       },
       {
         "command": "aesthenix.analyzeSelection",
@@ -32,49 +50,107 @@
       {
         "command": "aesthenix.applyRefactor",
         "title": "AESTHENIXAI: Apply AI Refactor"
+      },
+      {
+        "command": "aesthenix.acceptFix",
+        "title": "AESTHENIXAI: Accept Fix on Current Line"
+      },
+      {
+        "command": "aesthenix.rejectFix",
+        "title": "AESTHENIXAI: Reject Fix on Current Line"
+      },
+      {
+        "command": "aesthenix.showMetrics",
+        "title": "AESTHENIXAI: Show Performance Metrics"
       }
     ],
     "menus": {
       "editor/context": [
         {
           "command": "aesthenix.analyze",
-          "when": "editorLangId == java",
+          "when": "editorLangId =~ /^(java|javascript|typescript|python)$/",
           "group": "aesthenix@1"
         },
         {
           "command": "aesthenix.analyzeSelection",
-          "when": "editorLangId == java && editorHasSelection",
+          "when": "editorLangId =~ /^(java|javascript|typescript|python)$/ && editorHasSelection",
           "group": "aesthenix@2"
         },
         {
           "command": "aesthenix.applyRefactor",
-          "when": "editorLangId == java",
+          "when": "editorLangId =~ /^(java|javascript|typescript|python)$/",
           "group": "aesthenix@3"
+        },
+        {
+          "command": "aesthenix.acceptFix",
+          "when": "editorLangId =~ /^(java|javascript|typescript|python)$/",
+          "group": "aesthenix@4"
+        },
+        {
+          "command": "aesthenix.rejectFix",
+          "when": "editorLangId =~ /^(java|javascript|typescript|python)$/",
+          "group": "aesthenix@5"
         }
       ]
     },
+    "keybindings": [
+      {
+        "command": "aesthenix.analyze",
+        "key": "ctrl+shift+a",
+        "mac": "cmd+shift+a",
+        "when": "editorTextFocus && editorLangId =~ /^(java|javascript|typescript|python)$/"
+      },
+      {
+        "command": "aesthenix.acceptFix",
+        "key": "ctrl+shift+enter",
+        "mac": "cmd+shift+enter",
+        "when": "editorTextFocus && editorLangId =~ /^(java|javascript|typescript|python)$/"
+      },
+      {
+        "command": "aesthenix.rejectFix",
+        "key": "ctrl+shift+backspace",
+        "mac": "cmd+shift+backspace",
+        "when": "editorTextFocus && editorLangId =~ /^(java|javascript|typescript|python)$/"
+      }
+    ],
     "configuration": {
       "title": "AESTHENIXAI",
       "properties": {
         "aesthenixai.backendUrl": {
           "type": "string",
-          "default": "http://localhost:8080/api",
-          "description": "URL of the AESTHENIXAI backend API."
+          "default": "http://localhost:8082/api",
+          "description": "URL of the AESTHENIXAI backend API. Change this if you deploy the backend remotely."
+        },
+        "aesthenixai.mode": {
+          "type": "string",
+          "enum": ["hybrid", "ai", "offline"],
+          "enumDescriptions": [
+            "Hybrid: instant rule-based results + AI analysis (recommended)",
+            "AI only: skip local rules, send everything to AI",
+            "Offline: local rules only, no AI call — instant but limited"
+          ],
+          "default": "hybrid",
+          "description": "Analysis mode. Hybrid gives instant feedback while AI runs in the background."
         },
         "aesthenixai.timeoutMs": {
           "type": "number",
-          "default": 30000,
-          "description": "Request timeout in milliseconds."
+          "default": 180000,
+          "description": "Request timeout in milliseconds. Default 3 min — local AI (Ollama) can be slow."
         },
         "aesthenixai.highlightIssues": {
           "type": "boolean",
           "default": true,
-          "description": "Highlight issue lines in the editor."
+          "description": "Highlight issue lines in the editor with colored left-border decorations."
         },
         "aesthenixai.autoAnalyzeOnSave": {
           "type": "boolean",
           "default": false,
-          "description": "Automatically analyze Java files when saved."
+          "description": "Automatically analyze files when saved. Disabled by default to avoid slow saves."
+        },
+        "aesthenixai.inlineSuggestions": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show Copilot-style inline fix suggestions on flagged lines (Tab to accept)."
         }
       }
     }
