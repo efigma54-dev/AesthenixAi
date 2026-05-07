@@ -1,9 +1,10 @@
 import { useState, lazy, Suspense } from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, useSearchParams } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
 import Topbar from './components/Topbar';
 import CommandPalette from './components/CommandPalette';
 import ErrorBoundary from './components/ErrorBoundary';
+import ServerStatus from './components/ServerStatus';
 import './styles/global.css';
 
 // Lazy-load every page — only the active route is downloaded
@@ -12,6 +13,7 @@ const EditorView = lazy(() => import('./pages/EditorView'));
 const GithubView = lazy(() => import('./pages/GithubView'));
 const HistoryView = lazy(() => import('./pages/HistoryView'));
 const RepoScanView = lazy(() => import('./pages/RepoScanView'));
+const DashboardView = lazy(() => import('./pages/DashboardView'));
 
 function PageFallback() {
   return (
@@ -22,7 +24,10 @@ function PageFallback() {
 }
 
 function Dashboard() {
-  const [active, setActive] = useState('editor');
+  const [searchParams] = useSearchParams();
+  // Support deep-linking from landing page: /app?tab=repo-scan
+  const initialTab = searchParams.get('tab') ?? 'editor';
+  const [active, setActive] = useState(initialTab);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [runTrigger, setRunTrigger] = useState(0);
   const [clearTrigger, setClearTrigger] = useState(0);
@@ -44,6 +49,7 @@ function Dashboard() {
 
   return (
     <div style={{ display: 'flex', height: '100vh', background: '#0b0b0f', overflow: 'hidden' }}>
+      <ServerStatus />
       <Sidebar active={active} setActive={setActive} />
 
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -62,6 +68,7 @@ function Dashboard() {
             {active === 'repo-scan' && <RepoScanView />}
             {active === 'github' && <GithubView />}
             {active === 'history' && <HistoryView onRestoreToEditor={handleRestoreToEditor} />}
+            {active === 'dashboard' && <DashboardView />}
           </Suspense>
         </main>
       </div>

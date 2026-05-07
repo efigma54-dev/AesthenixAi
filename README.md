@@ -1,10 +1,26 @@
-# AESTHENIXAI — Intelligent Code Analysis Platform
+# AESTHENIXAI — PR Quality Assistant
 
-> AI-powered GitHub App that automatically reviews pull requests using a hybrid static + AI pipeline, surfaces results via GitHub Check annotations, and enforces quality gates.
+> 🚀 **Production-ready GitHub App for automated PR code review with AI + static analysis**
+
+Ship cleaner pull requests with AI-powered review. Catch risky code before it hits review with instant feedback in under 5 seconds.
 
 **Live Demo:** https://aesthenixai-backend.onrender.com/api/health  
 **Frontend:** https://aesthenixai.vercel.app  
 **Webhook:** `POST /api/github/webhook`
+
+---
+
+## 📢 Ready to Launch?
+
+**🚀 Strategic Pivot Complete!** The product is production-ready. Now it's time to get users.
+
+**Start Here:** [START_HERE.md](./START_HERE.md) — Your complete launch guide  
+**Today's Plan:** [IMMEDIATE_ACTIONS.md](./IMMEDIATE_ACTIONS.md) — 3-hour action plan  
+**Growth Hub:** [GROWTH_INDEX.md](./GROWTH_INDEX.md) — All growth documentation
+
+**Implementation Status:** [STRATEGIC_PIVOT_COMPLETE.md](./STRATEGIC_PIVOT_COMPLETE.md) — What's been built and why
+
+---
 
 ✅ Production Readiness Checklist
 

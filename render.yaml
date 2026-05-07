@@ -3,18 +3,53 @@ services:
     name: aesthenixai-backend
     runtime: java
     buildCommand: ./mvnw clean package -DskipTests -q
-    startCommand: java -jar target/ai-code-reviewer-0.0.1-SNAPSHOT.jar
-    healthCheckPath: /api/ping
+    startCommand: java -Xmx512m -jar target/ai-code-reviewer-0.0.1-SNAPSHOT.jar
+    healthCheckPath: /api/health
+    autoDeploy: true
     envVars:
+      # ── Server ──────────────────────────────────────────────
+      - key: SERVER_PORT
+        value: '10000' # Render assigns port 10000 by default
+
+      # ── Spring ──────────────────────────────────────────────
       - key: SPRING_PROFILES_ACTIVE
         value: prod
-      - key: OPENAI_API_KEY
-        sync: false # set manually in Render dashboard
-      - key: GITHUB_APP_ID
-        sync: false
-      - key: GITHUB_PRIVATE_KEY
-        sync: false
+
+      # ── CORS — set to your Vercel frontend URL ───────────────
       - key: CORS_ORIGINS
-        sync: false # set to your Vercel URL after deploy
-      - key: PORT
-        value: '8080'
+        sync: false # e.g. https://your-app.vercel.app
+
+      # ── GitHub App ───────────────────────────────────────────
+      - key: GITHUB_APP_ID
+        value: '3349093'
+      - key: GITHUB_PRIVATE_KEY
+        sync: false # paste full PEM content (no file path needed on Render)
+      - key: GITHUB_TOKEN
+        sync: false # optional PAT fallback
+
+      # ── PR Bot ───────────────────────────────────────────────
+      - key: PR_BOT_ENABLED
+        value: 'true'
+      - key: PR_BOT_WEBHOOK_SECRET
+        sync: false # must match GitHub App webhook secret
+      - key: PR_BOT_SCORE_GATE
+        value: '70'
+
+      # ── Ollama — not available on Render free tier ───────────
+      # Use OLLAMA_ENABLED=false to disable AI and run rules-only
+      - key: OLLAMA_ENABLED
+        value: 'false' # set true only if you have a self-hosted Ollama endpoint
+      - key: OLLAMA_URL
+        value: 'http://127.0.0.1:11434'
+
+      # ── Analysis limits ──────────────────────────────────────
+      - key: ANALYSIS_MAX_FILE_SIZE
+        value: '524288' # 512KB on free tier (less RAM)
+
+      # ── PR Bot score gate ────────────────────────────────────
+      - key: PR_BOT_SCORE_GATE
+        value: '70'
+
+      # ── Rate limiting ────────────────────────────────────────
+      - key: RATE_LIMIT_REQUESTS_PER_MINUTE
+        value: '10'

@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
+import ModeBadge from './ModeBadge';
 
 const scoreColor = (s) =>
   s >= 75 ? '#4ade80' : s >= 50 ? '#fbbf24' : '#f87171';
 const scoreLabel = (s) =>
   s >= 75 ? 'Good' : s >= 50 ? 'Average' : 'Poor';
 
-export default function ScoreCard({ score, parsedInfo }) {
+export default function ScoreCard({ score, parsedInfo, mode = 'hybrid' }) {
   const [count, setCount] = useState(0);
   const hex = scoreColor(score);
 
@@ -33,6 +34,11 @@ export default function ScoreCard({ score, parsedInfo }) {
 
   return (
     <div className="card fade-in" style={{ padding: '14px 16px' }}>
+      {/* Mode badge */}
+      <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'flex-end' }}>
+        <ModeBadge mode={mode} size="small" />
+      </div>
+
       {/* Score row */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         {/* Mini ring */}

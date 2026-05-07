@@ -1,22 +1,28 @@
 server:
-  port: 8080
+  port: ${SERVER_PORT:8082}
+  shutdown: graceful
+  tomcat:
+    threads:
+      max: 200
+      min-spare: 10
 
 ollama:
-  url: ${OLLAMA_URL:http://localhost:11434}
-  model: '${OLLAMA_MODEL:qwen3.5:9b}'
-  timeout: ${OLLAMA_TIMEOUT:120}
-  retry-attempts: ${OLLAMA_RETRIES:3}
+  url: ${OLLAMA_URL:http://127.0.0.1:11434}
+  model: '${OLLAMA_MODEL:qwen2.5-coder:7b}'
+  timeout: ${OLLAMA_TIMEOUT:180}
+  retry-attempts: ${OLLAMA_RETRIES:1} # 1 retry — 3 was too slow (3×120s = 6 min)
   enabled: ${OLLAMA_ENABLED:true}
 
 github:
   token: ${GITHUB_TOKEN:}
   app-id: ${GITHUB_APP_ID:3349093}
   private-key: ${GITHUB_PRIVATE_KEY:}
-  private-key-path: ${GITHUB_PRIVATE_KEY_PATH:classpath:github-app-private-key.pem}
+  private-key-path: ${GITHUB_PRIVATE_KEY_PATH:C:/ai-code-reviewe/ai-code-reviewer/aesthenixai.2026-04-21.private-key.pem}
   max-files: 15
 
 rate-limit:
-  requests-per-minute: 10
+  requests-per-minute: 10 # DEPRECATED: superseded by per-user-rpm below
+  per-user-rpm: ${RATE_LIMIT_PER_USER_RPM:10} # per-identity rate limit (github login / X-User-Id / hashed IP)
 
 # ────────────────────────────────────────────────────────────────
 # CONFIGURABLE SCORING SYSTEM
@@ -92,18 +98,20 @@ analysis:
   diff-analysis-enabled: true
   metrics-tracking-enabled: true
 
-  # Multi-language support (future)
+  # Multi-language support
   enabled-languages:
     - java
-    # - python
-    # - javascript
+    - javascript
+    - typescript
+    - python
 
 # ────────────────────────────────────────────────────────────────
 # PR REVIEW BOT CONFIGURATION
 # ────────────────────────────────────────────────────────────────
 pr-bot:
-  enabled: ${PR_BOT_ENABLED:false}
+  enabled: ${PR_BOT_ENABLED:true}
   webhook-secret: ${PR_BOT_WEBHOOK_SECRET:}
+  score-gate: ${PR_BOT_SCORE_GATE:70} # PRs scoring below this fail the quality gate
 
   # Comment behavior
   comment-on-pr: true
@@ -118,6 +126,10 @@ pr-bot:
 spring:
   application:
     name: ai-code-reviewer
+  main:
+    lazy-initialization: false
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
   cache:
     type: caffeine
     caffeine:
@@ -149,6 +161,41 @@ logging:
     com.aicode.service: DEBUG # service lifecycle logs
   pattern:
     console: '%d{HH:mm:ss} [%X{requestId}] %-5level %logger{20} - %msg%n'
+
+# ────────────────────────────────────────────────────────────────
+# FEATURE FLAGS — toggle without redeploying
+# ────────────────────────────────────────────────────────────────
+features:
+  ai-enabled: ${FEATURE_AI_ENABLED:true} # disable to run rule-only under load
+  async-review: ${FEATURE_ASYNC_REVIEW:true} # enable async job queue endpoint
+  pr-bot-enabled: ${FEATURE_PR_BOT_ENABLED:true} # disable PR bot without touching webhook
+  repo-scan-enabled: ${FEATURE_REPO_SCAN:true} # disable expensive repo scans
+
+# ────────────────────────────────────────────────────────────────
+# QUEUE CONTROL
+# ────────────────────────────────────────────────────────────────
+queue:
+  threshold: ${QUEUE_THRESHOLD:100} # max active jobs before LOW/MEDIUM are rejected
+
+# ────────────────────────────────────────────────────────────────
+# WORKER POOL — CPU-aware sizing
+# ────────────────────────────────────────────────────────────────
+worker:
+  core-size: ${WORKER_CORE_SIZE:0} # 0 = auto (availableProcessors)
+  max-size: ${WORKER_MAX_SIZE:0} # 0 = auto (availableProcessors * 2)
+
+# ────────────────────────────────────────────────────────────────
+# AI USAGE LIMITER — cost control
+# ────────────────────────────────────────────────────────────────
+ai:
+  daily-limit: ${AI_DAILY_LIMIT:50} # max AI-powered analyses per user per UTC calendar day
+
+# ────────────────────────────────────────────────────────────────
+# WARM-UP — cold start handling (Render free tier)
+# ────────────────────────────────────────────────────────────────
+warmup:
+  enabled: ${WARMUP_ENABLED:true}
+  window-seconds: ${WARMUP_WINDOW_SECONDS:20} # 503 gate duration after startup
 
 # ────────────────────────────────────────────────────────────────
 # METRICS & OBSERVABILITY

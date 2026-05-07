@@ -23,6 +23,8 @@ public class ScoringConfig {
   private int longMethodPenalty = 15;
   private int nestedLoopPenalty = 10;
   private int namingConventionPenalty = 5;
+  private int godClassPenalty = 20;
+  private int circularDependencyPenalty = 25;
   private int complexityPenalty = 10;
   private int exceptionHandlingPenalty = 20;
   private int loopRatioPenalty = 8;
@@ -84,6 +86,22 @@ public class ScoringConfig {
 
   public void setNamingConventionPenalty(int namingConventionPenalty) {
     this.namingConventionPenalty = namingConventionPenalty;
+  }
+
+  public int getGodClassPenalty() {
+    return godClassPenalty;
+  }
+
+  public void setGodClassPenalty(int godClassPenalty) {
+    this.godClassPenalty = godClassPenalty;
+  }
+
+  public int getCircularDependencyPenalty() {
+    return circularDependencyPenalty;
+  }
+
+  public void setCircularDependencyPenalty(int circularDependencyPenalty) {
+    this.circularDependencyPenalty = circularDependencyPenalty;
   }
 
   public int getComplexityPenalty() {

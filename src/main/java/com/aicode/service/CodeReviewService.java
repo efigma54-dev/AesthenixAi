@@ -25,12 +25,12 @@ public class CodeReviewService {
         this.analysisPipeline = analysisPipeline;
     }
 
-    @Cacheable(value = "reviews", key = "#code.hashCode()")
-    public ReviewResponse reviewCode(String code) {
-        log.info("Reviewing code ({} chars) via analysis pipeline", code.length());
+    @Cacheable(value = "reviews", key = "#code.hashCode() + #language.hashCode()")
+    public ReviewResponse reviewCode(String code, String language) {
+        log.info("Reviewing code ({} chars, lang={}) via analysis pipeline", code.length(), language);
         long start = System.currentTimeMillis();
 
-        AnalysisPipeline.AnalysisResult result = analysisPipeline.analyze(code, "unknown");
+        AnalysisPipeline.AnalysisResult result = analysisPipeline.analyze(code, language);
 
         List<String> suggestions = result.getSuggestions().stream()
                 .map(s -> s.getMessage())
@@ -47,6 +47,14 @@ public class CodeReviewService {
                 .suggestions(suggestions)
                 .improvedCode(result.getImprovedCode())
                 .parsedInfo(null)
+                .aiSkipped(result.isAiSkipped())
+                .aiSkipReason(result.getAiSkipReason())
                 .build();
+    }
+
+    /** Backward-compatible overload */
+    @Cacheable(value = "reviews", key = "#code.hashCode()")
+    public ReviewResponse reviewCode(String code) {
+        return reviewCode(code, "java");
     }
 }

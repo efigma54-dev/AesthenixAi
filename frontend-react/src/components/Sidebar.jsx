@@ -5,6 +5,7 @@ const NAV = [
   { id: 'repo-scan', label: 'Repo Scan', icon: '🔍' },
   { id: 'github', label: 'GitHub', icon: '🐙' },
   { id: 'history', label: 'History', icon: '🕐' },
+  { id: 'dashboard', label: 'Dashboard', icon: '📊' },
 ];
 
 const BOTTOM = [

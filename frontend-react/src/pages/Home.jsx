@@ -58,7 +58,7 @@ export default function Home() {
     setResult(null);
 
     try {
-      const res = await fetch('http://localhost:8080/api/review', {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8082/api'}/review`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code }),

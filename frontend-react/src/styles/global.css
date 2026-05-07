@@ -149,6 +149,17 @@ body {
     transform: translateY(0);
   }
 }
+
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
 .fade-in {
   animation: fadeUp 0.25s ease both;
 }

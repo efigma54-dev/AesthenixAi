@@ -11,13 +11,23 @@ public class AIResult {
     private final List<Suggestion> suggestions;
     private final double           aiScore;
     private final String           improvedCode;
+    private final boolean          aiSkipped;
+    private final String           aiSkipReason;
 
     public AIResult(List<Issue> issues, List<Suggestion> suggestions,
                     double aiScore, String improvedCode) {
+        this(issues, suggestions, aiScore, improvedCode, false, null);
+    }
+
+    public AIResult(List<Issue> issues, List<Suggestion> suggestions,
+                    double aiScore, String improvedCode,
+                    boolean aiSkipped, String aiSkipReason) {
         this.issues       = issues;
         this.suggestions  = suggestions;
         this.aiScore      = aiScore;
         this.improvedCode = improvedCode != null ? improvedCode : "";
+        this.aiSkipped    = aiSkipped;
+        this.aiSkipReason = aiSkipReason;
     }
 
     /** Legacy 3-arg constructor — no improved code */
@@ -29,4 +39,6 @@ public class AIResult {
     public List<Suggestion> getSuggestions()  { return suggestions; }
     public double           getAiScore()      { return aiScore; }
     public String           getImprovedCode() { return improvedCode; }
+    public boolean          isAiSkipped()     { return aiSkipped; }
+    public String           getAiSkipReason() { return aiSkipReason; }
 }

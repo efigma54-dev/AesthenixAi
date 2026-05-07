@@ -2,60 +2,74 @@ import { useState, useEffect } from 'react';
 import { checkHealth } from '../lib/api';
 
 /**
- * Polls the backend health endpoint every 15s.
- * Shows a green dot when reachable, red when not.
+ * ServerStatus — shows backend connection status
+ * 
+ * Critical for trust when backend sleeps on Render free tier.
+ * Users keep using the app instead of thinking it's broken.
  */
 export default function ServerStatus() {
-  const [status, setStatus] = useState('checking'); // 'checking' | 'up' | 'down'
-
-  const check = async () => {
-    const ok = await checkHealth();
-    setStatus(ok ? 'up' : 'down');
-  };
+  const [status, setStatus] = useState('checking'); // checking | online | offline
+  const [showBanner, setShowBanner] = useState(false);
 
   useEffect(() => {
+    const check = async () => {
+      const healthy = await checkHealth();
+      setStatus(healthy ? 'online' : 'offline');
+      setShowBanner(!healthy);
+    };
+
     check();
-    const interval = setInterval(check, 15_000);
+    const interval = setInterval(check, 30000); // Check every 30s
     return () => clearInterval(interval);
   }, []);
 
-  const COLOR = { checking: '#4b5563', up: '#4ade80', down: '#f87171' };
-  const LABEL = { checking: 'Checking…', up: 'Backend online', down: 'Backend offline' };
-  const TITLE = {
-    checking: 'Checking backend…',
-    up: 'Backend is running on port 8080',
-    down: 'Cannot reach backend. Run: ./mvnw spring-boot:run',
-  };
+  if (!showBanner) return null;
 
   return (
     <div
-      title={TITLE[status]}
+      role="alert"
       style={{
-        display: 'flex', alignItems: 'center', gap: 5,
-        padding: '3px 8px', borderRadius: 5, cursor: 'default',
-        background: status === 'down' ? 'rgba(248,113,113,0.08)' : 'transparent',
-        border: status === 'down' ? '1px solid rgba(248,113,113,0.2)' : '1px solid transparent',
-        transition: 'all 300ms ease',
+        position: 'fixed',
+        top: 12,
+        right: 12,
+        zIndex: 1000,
+        padding: '10px 16px',
+        borderRadius: 8,
+        background: 'rgba(245, 158, 11, 0.1)',
+        border: '1px solid rgba(245, 158, 11, 0.3)',
+        backdropFilter: 'blur(10px)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        fontSize: 12,
+        color: '#f59e0b',
+        boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+        animation: 'slideIn 300ms ease',
       }}
     >
-      <span style={{
-        width: 6, height: 6, borderRadius: '50%',
-        background: COLOR[status],
-        display: 'inline-block',
-        animation: status === 'checking' ? 'pulse-dot 1.5s ease-in-out infinite' : 'none',
-        boxShadow: status === 'up' ? '0 0 6px rgba(74,222,128,0.5)' : 'none',
-      }} />
-      <span style={{ fontSize: 11, color: COLOR[status] }}>{LABEL[status]}</span>
-      {status === 'down' && (
-        <button
-          onClick={check}
-          style={{
-            fontSize: 10, padding: '1px 6px', borderRadius: 3, cursor: 'pointer',
-            background: 'rgba(248,113,113,0.12)', color: '#f87171',
-            border: '1px solid rgba(248,113,113,0.25)', marginLeft: 2,
-          }}
-        >retry</button>
-      )}
+      <span style={{ fontSize: 16 }}>⚡</span>
+      <div>
+        <div style={{ fontWeight: 600, marginBottom: 2 }}>Running in Offline Rule Mode</div>
+        <div style={{ fontSize: 11, opacity: 0.8 }}>
+          AI unavailable — static analysis still active
+        </div>
+      </div>
+      <button
+        onClick={() => setShowBanner(false)}
+        style={{
+          background: 'none',
+          border: 'none',
+          color: '#f59e0b',
+          cursor: 'pointer',
+          fontSize: 16,
+          padding: 4,
+          opacity: 0.6,
+        }}
+        onMouseEnter={(e) => (e.target.style.opacity = 1)}
+        onMouseLeave={(e) => (e.target.style.opacity = 0.6)}
+      >
+        ×
+      </button>
     </div>
   );
 }

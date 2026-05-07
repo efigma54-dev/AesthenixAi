@@ -1,7 +1,6 @@
 package com.aicode.security;
 
 import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.SignatureAlgorithm;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.io.ClassPathResource;
@@ -44,10 +43,10 @@ public class JwtUtil {
             PrivateKey key = loadPrivateKey(privateKeyPath);
 
             return Jwts.builder()
-                    .setIssuedAt(new Date(now))
-                    .setExpiration(new Date(expiration))
-                    .setIssuer(appId)
-                    .signWith(key, SignatureAlgorithm.RS256)
+                    .issuedAt(new Date(now))
+                    .expiration(new Date(expiration))
+                    .issuer(appId)
+                    .signWith(key, Jwts.SIG.RS256)
                     .compact();
 
         } catch (Exception e) {

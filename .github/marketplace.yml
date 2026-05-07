@@ -1,0 +1,69 @@
+# GitHub Marketplace App Listing
+# Submit this at: https://github.com/settings/apps/aesthenixai → Marketplace listing
+
+name: AESTHENIXAI Code Review
+tagline: AI-powered code review for every pull request — Java, JS, TS, Python
+description: |
+  AESTHENIXAI automatically reviews your pull requests using a hybrid
+  static analysis + local AI pipeline. Get inline annotations, quality
+  scores, and one-click fix suggestions without sending code to external APIs.
+
+  **What it does:**
+  - Reviews every PR automatically when opened or updated
+  - Posts a quality score (0–100) with pass/fail gate
+  - Adds inline annotations on changed lines with fix suggestions
+  - Supports Java, JavaScript, TypeScript, and Python
+  - Works with local Ollama models — your code never leaves your infrastructure
+
+  **How it works:**
+  1. Open a PR → AESTHENIXAI receives the webhook
+  2. Analyzes only the changed lines (diff-based, not full repo)
+  3. Posts a summary comment + inline annotations in the Files tab
+  4. Creates a Check Run — block merges if score < threshold
+
+categories:
+  - code-quality
+  - testing
+
+pricing_model: free # update to tiered when ready
+
+permissions:
+  pull_requests: write # post comments
+  checks: write # create check runs
+  contents: read # fetch file content for analysis
+  metadata: read # required for all apps
+
+events:
+  - pull_request
+  - check_suite
+
+# ── Pricing tiers (when ready to monetize) ──────────────────
+# pricing:
+#   - plan: free
+#     monthly_price: 0
+#     unit: user
+#     description: "50 PR reviews/month, rule-based analysis only"
+#     bullets:
+#       - "50 PR reviews per month"
+#       - "Static rule analysis (Java, JS, TS, Python)"
+#       - "Quality score + inline annotations"
+#
+#   - plan: pro
+#     monthly_price: 499   # ₹499 / $6
+#     unit: user
+#     description: "Unlimited PR reviews + AI analysis"
+#     bullets:
+#       - "Unlimited PR reviews"
+#       - "AI-powered analysis (Ollama)"
+#       - "One-click fix suggestions"
+#       - "Custom score gate threshold"
+#
+#   - plan: team
+#     monthly_price: 1999  # ₹1999 / $24
+#     unit: organization
+#     description: "Team dashboard + analytics"
+#     bullets:
+#       - "Everything in Pro"
+#       - "Team dashboard with trends"
+#       - "Per-repo analytics"
+#       - "Priority support"
